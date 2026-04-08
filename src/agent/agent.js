@@ -183,12 +183,12 @@ export class Agent {
                 finalUsername = rawName.replace('[Discord]', '').trim();
             }
 
-            // === TOKEN SAVER: ONLY RESPOND WHEN CALLED ===
-            const botName = this.name.toLowerCase(); // "byn"
-            const textLcd = finalMessage.toLowerCase();
+            // Convert both the bot's name and the incoming message to lowercase
+            const lowerName = this.name.toLowerCase();
+            const lowerText = finalMessage.toLowerCase();
 
-            // Define isMentioned here
-            const isMentioned = textLcd.includes(botName) || textLcd.includes("Byn");
+            // Check if the lowercase message contains the lowercase name
+            const isMentioned = lowerText.includes(lowerName);
 
             // If the bot is not called, stay silent (skip function) - Except from Web UI (ADMIN)
             if (!isMentioned && username !== 'ADMIN') {
