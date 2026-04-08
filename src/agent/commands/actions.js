@@ -7,15 +7,32 @@ import * as worldLib from '../library/world.js';
 import { Vec3 } from 'vec3';
 import { addCommand } from './index.js';
 
+let questCache = null;
+const questMemoryFile = './bots/quest_memory.json';
+
+function getQuests() {
+    if (questCache !== null) return questCache;
+    if (fs.existsSync(questMemoryFile)) {
+        try { questCache = JSON.parse(fs.readFileSync(questMemoryFile, 'utf8')); }
+        catch (e) { questCache = []; }
+    } else {
+        questCache = [];
+    }
+    return questCache;
+}
+
+function saveQuests(quests) {
+    questCache = quests;
+    fs.writeFileSync(questMemoryFile, JSON.stringify(quests, null, 2));
+}
 
 function runAsAction(actionFn, resume = false, timeout = -1) {
-    let actionLabel = null;  // Will be set on first use
+    let actionLabel = null;
 
     const wrappedAction = async function (agent, ...args) {
-        // Set actionLabel only once, when the action is first created
         if (!actionLabel) {
             const actionObj = actionsList.find(a => a.perform === wrappedAction);
-            actionLabel = actionObj.name.substring(1); // Remove the ! prefix
+            actionLabel = actionObj.name.substring(1);
         }
 
         const actionFnWithAgent = async () => {
@@ -46,34 +63,23 @@ export const actionsList = [
             const actionFn = async () => {
                 try {
                     let prevCounter = agent.coder.file_counter;
-
-                    // AI thinks and writes the code
                     result = await agent.coder.generateCode(agent.history);
 
-                    // IF SUCCESSFUL (counter increases & no failed text)
                     if (agent.coder.file_counter > prevCounter && !result.includes('Code generation failed')) {
-
-                        // 1. DETERMINE FILE AND FOLDER NAME FIRST (Max 4 words)
                         let cleanName = prompt.split(' ').slice(0, 4).join('_').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                         if (!cleanName || cleanName === '') cleanName = 'custom_action_' + Date.now();
 
                         let lastFile = `.${agent.coder.fp}${prevCounter}.js`;
                         let saveFolder = './bots/saved_skills/';
 
-                        // Automatically create folder if it does not exist
                         if (!fs.existsSync(saveFolder)) fs.mkdirSync(saveFolder, { recursive: true });
-
-                        // 2. COPY THE FILE PERMANENTLY
                         fs.copyFileSync(lastFile, `${saveFolder}${cleanName}.js`);
 
-                        // 3. INSTANT INJECTION TO AI BRAIN
-                        const commandBaru = {
+                        const newCommand = {
                             name: `!${cleanName}`,
                             description: `Automatic skill: ${cleanName.replace(/_/g, ' ')}. Use this !${cleanName} command if the user asks you to perform a similar action or one with the same meaning.`,
                             perform: runAsAction(async (agent) => {
-                                // THIS LINE WAS MISSING YESTERDAY:
                                 const src = fs.readFileSync(`${saveFolder}${cleanName}.js`, 'utf8');
-
                                 const compartment = makeCompartment({
                                     skills: skills,
                                     log: skills.log,
@@ -85,11 +91,10 @@ export const actionsList = [
                             })
                         };
 
-                        // Insert into the brain list right now!
-                        actionsList.push(commandBaru);
-                        addCommand(commandBaru);
+                        actionsList.push(newCommand);
+                        addCommand(newCommand);
 
-                        result += `\n[SUCCESS: Skill !${cleanName} has been learned and CAN BE USED RIGHT NOW!]`;
+                        result += `\n[SUCCESS: Skill !${cleanName} has been learned and is ready to use.]`;
                     }
                 } catch (e) {
                     result = 'Error generating code: ' + e.toString();
@@ -310,7 +315,7 @@ export const actionsList = [
         },
         perform: runAsAction(async (agent, type, num) => {
             await skills.collectBlock(agent.bot, type, num);
-        }, false, 10) // 10 minute timeout
+        }, false, 10)
     },
     {
         name: '!craftRecipe',
@@ -615,7 +620,7 @@ export const actionsList = [
     },
     {
         name: '!saddleEntity',
-        description: 'Equip a saddle from your inventory and put it on the nearest tamed animal of the specified type (e.g., "horse", "pig", "donkey", "mule", "strider").',
+        description: 'Equip a saddle from your inventory and put it on the nearest tamed animal of the specified type.',
         params: {
             'entity_name': { type: 'string', description: 'The type of animal to saddle, like "horse" or "pig"' }
         },
@@ -624,78 +629,16 @@ export const actionsList = [
         })
     },
     {
-        name: '!findItem',
-        description: 'Search spatial memory for item in chests.',
-        params: {
-            'item_name': { type: 'string', description: 'The exact name of the item to search for (e.g., iron_ingot)' }
-        },
-        perform: async function (agent, item_name) {
-            const memoryFile = './bots/chest_memory.json';
-            if (!fs.existsSync(memoryFile)) return "I have never opened any chest, Boss.";
-
-            let data;
-            try {
-                data = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
-            } catch (e) {
-                return "Ouch, my memory book (JSON) seems broken.";
-            }
-
-            let firstCoord = null;
-
-            // Find the coordinates of the first chest that has the item
-            for (let [coords, items] of Object.entries(data)) {
-                if (items[item_name]) {
-                    firstCoord = coords;
-                    break;
-                }
-            }
-
-            if (firstCoord) {
-                let [x, y, z] = firstCoord.split(',').map(Number);
-
-                // 1. Tell Boss in chat that the bot will run to check
-                skills.log(agent.bot, `My notes say it's at (${x}, ${y}, ${z}). Running there to check directly Boss! 🏃💨`);
-
-                // 2. FORCE THE BOT TO WALK!
-                let sampai = await skills.goToPosition(agent.bot, x, y, z, 2);
-
-                if (!sampai) {
-                    return `Reporting Boss, I wanted to check the chest at (${x}, ${y}, ${z}) but there's a wall/no path!`;
-                }
-
-                // 3. FORCE OPEN CHEST (so JSON updates automatically)
-                await skills.viewChest(agent.bot);
-
-                // 4. RE-READ THE JUST UPDATED JSON
-                let updatedData = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
-
-                if (updatedData[firstCoord] && updatedData[firstCoord][item_name]) {
-                    return `Reporting Boss! I just checked directly in the field, the items are STILL SAFE! There are ${updatedData[firstCoord][item_name]} of ${item_name} inside the chest.`;
-                } else {
-                    return `Oh no Boss! I just opened the chest, it turns out to be EMPTY! The ${item_name} was secretly moved by someone. My database has been updated automatically!`;
-                }
-            }
-
-            return `Sorry Boss, I checked my memory but couldn't find ${item_name} in any chest.`;
-        }
-    },
-    {
         name: '!addQuest',
         description: 'Record a new task in memory.',
         params: {
-            'quest_text': { type: 'string', description: 'Task or quest details (e.g.: Collect 64 iron ingots for Boss)' }
+            'quest_text': { type: 'string', description: 'Task or quest details (e.g.: Collect 64 iron ingots)' }
         },
         perform: async function (agent, quest_text) {
-            const memoryFile = './bots/quest_memory.json';
-            let quests = [];
-            if (fs.existsSync(memoryFile)) {
-                try { quests = JSON.parse(fs.readFileSync(memoryFile, 'utf8')); } catch (e) { quests = []; }
-            }
-            // Add new quest
+            let quests = getQuests();
             quests.push({ task: quest_text, status: 'pending', date: new Date().toLocaleDateString() });
-            fs.writeFileSync(memoryFile, JSON.stringify(quests, null, 2));
-
-            return `Ready Boss! Quest "${quest_text}" has been officially recorded in my agenda journal.`;
+            saveQuests(quests);
+            return `Task "${quest_text}" has been successfully recorded in the quest log.`;
         }
     },
     {
@@ -703,18 +646,14 @@ export const actionsList = [
         description: 'View all pending tasks.',
         params: {},
         perform: async function (agent) {
-            const memoryFile = './bots/quest_memory.json';
-            if (!fs.existsSync(memoryFile)) return "My agenda book is still empty, Boss. No quests yet.";
-
-            let quests;
-            try { quests = JSON.parse(fs.readFileSync(memoryFile, 'utf8')); } catch (e) { return "My notebook is broken."; }
-
+            let quests = getQuests();
             let pendingQuests = quests.filter(q => q.status === 'pending');
-            if (pendingQuests.length === 0) return "All quests have been completed, Boss! We are idle right now.";
 
-            let reply = "Here is the list of our pending Quests:\n";
+            if (pendingQuests.length === 0) return "All quests have been completed. There are no pending tasks.";
+
+            let reply = "Pending Quests:\n";
             pendingQuests.forEach((q, i) => {
-                reply += `${i + 1}. ${q.task} (Dibuat: ${q.date})\n`;
+                reply += `${i + 1}. ${q.task} (Added: ${q.date})\n`;
             });
             return reply;
         }
@@ -726,49 +665,37 @@ export const actionsList = [
             'quest_number': { type: 'int', description: 'The number of the completed quest (e.g.: 1)' }
         },
         perform: async function (agent, quest_number) {
-            const memoryFile = './bots/quest_memory.json';
-            if (!fs.existsSync(memoryFile)) return "There are no quests at all, Boss.";
-
-            let quests = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+            let quests = getQuests();
             let pendingQuests = quests.filter(q => q.status === 'pending');
 
             if (quest_number < 1 || quest_number > pendingQuests.length) {
-                return `Invalid quest number, Boss. Try checking the list again using !checkQuest.`;
+                return `Invalid quest number. Please check the active quests list.`;
             }
 
-            // Find original index of the quest to be completed
             let taskToFinish = pendingQuests[quest_number - 1].task;
             let realIndex = quests.findIndex(q => q.task === taskToFinish && q.status === 'pending');
 
             if (realIndex !== -1) {
-                quests[realIndex].status = 'completed'; // Change status to completed
-                fs.writeFileSync(memoryFile, JSON.stringify(quests, null, 2));
-                return `Awesome Boss! Quest "${taskToFinish}" has been crossed off the list. GGWP!`;
+                quests[realIndex].status = 'completed';
+                saveQuests(quests);
+                return `Quest "${taskToFinish}" has been marked as completed. Great job!`;
             }
-            return "Ouch, there was an error when trying to cross off the quest.";
+            return "Failed to update the quest status.";
         }
     },
 ];
 
-// ==========================================
-// PERMANENT SKILL AUTO-LOADER
-// ==========================================
 const saveFolder = './bots/saved_skills/';
-
 if (fs.existsSync(saveFolder)) {
     const files = fs.readdirSync(saveFolder);
     for (const file of files) {
         if (file.endsWith('.js')) {
             const commandName = file.replace('.js', '');
-
-            // Auto-insert into AI brain list
             actionsList.push({
                 name: `!${commandName}`,
                 description: `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`,
                 perform: runAsAction(async (agent) => {
-                    // THIS LINE IS ALSO MANDATORY:
                     const src = fs.readFileSync(`${saveFolder}${file}`, 'utf8');
-
                     const compartment = makeCompartment({
                         skills: skills,
                         log: skills.log,
