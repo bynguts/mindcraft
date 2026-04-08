@@ -9,8 +9,6 @@ export function getNearestFreeSpace(bot, size=1, distance=8) {
      * @param {number} size - The (size x size) of the space to find, default 1.
      * @param {number} distance - The maximum distance to search, default 8.
      * @returns {Vec3} - The south west corner position of the nearest free space.
-     * @example
-     * let position = world.getNearestFreeSpace(bot, 1, 8);
      **/
     let empty_pos = bot.findBlocks({
         matching: (block) => {
@@ -47,9 +45,6 @@ export function getBlockAtPosition(bot, x=0, y=0, z=0) {
      * @param {number} y - The relative y offset to serach, default 0.
      * @param {number} y - The relative z offset to serach, default 0. 
      * @returns {Block} - The nearest block.
-     * @example
-     * let blockBelow = world.getBlockAtPosition(bot, 0, -1, 0);
-     * let blockAbove = world.getBlockAtPosition(bot, 0, 2, 0); since minecraft position is at the feet
      **/
     let block = bot.blockAt(bot.entity.position.offset(x, y, z));
     if (!block) block = {name: 'air'};
@@ -63,7 +58,6 @@ export function getSurroundingBlocks(bot) {
      * Get the surrounding blocks from the bot's environment.
      * @param {Bot} bot - The bot to get the block for.
      * @returns {string[]} - A list of block results as strings.
-     * @example
      **/
     // Create a list of block position results that can be unpacked.
     let res = [];
@@ -82,8 +76,6 @@ export function getFirstBlockAboveHead(bot, ignore_types=null, distance=32) {
      * @param {string[]} ignore_types - The names of the blocks to ignore.
      * @param {number} distance - The maximum distance to search, default 32.
      * @returns {string} - The fist block above head.
-     * @example
-     * let firstBlockAboveHead = world.getFirstBlockAboveHead(bot, null, 32);
      **/
     // if ignore_types is not a list, make it a list.
     let ignore_blocks = []; 
@@ -123,8 +115,6 @@ export function getNearestBlocks(bot, block_types=null, distance=8, count=10000)
      * @param {number} distance - The maximum distance to search, default 16.
      * @param {number} count - The maximum number of blocks to find, default 10000.
      * @returns {Block[]} - The nearest blocks of the given type.
-     * @example
-     * let woodBlocks = world.getNearestBlocks(bot, ['oak_log', 'birch_log'], 16, 1);
      **/
     // if blocktypes is not a list, make it a list
     let block_ids = [];
@@ -149,8 +139,6 @@ export function getNearestBlocksWhere(bot, predicate, distance=8, count=10000) {
      * @param {number} distance - The maximum distance to search, default 16.
      * @param {number} count - The maximum number of blocks to find, default 10000.
      * @returns {Block[]} - The nearest blocks that satisfy the given predicate.
-     * @example
-     * let waterBlocks = world.getNearestBlocksWhere(bot, block => block.name === 'water', 16, 10);
      **/
     let positions = bot.findBlocks({matching: predicate, maxDistance: distance, count: count});
     let blocks = positions.map(position => bot.blockAt(position));
@@ -165,8 +153,6 @@ export function getNearestBlock(bot, block_type, distance=16) {
      * @param {string} block_type - The name of the block to search for.
      * @param {number} distance - The maximum distance to search, default 16.
      * @returns {Block} - The nearest block of the given type.
-     * @example
-     * let coalBlock = world.getNearestBlock(bot, 'coal_ore', 16);
      **/
     let blocks = getNearestBlocks(bot, block_type, distance, 1);
     if (blocks.length > 0) {
@@ -264,10 +250,6 @@ export function getInventoryCounts(bot) {
      * Get an object representing the bot's inventory.
      * @param {Bot} bot - The bot to get the inventory for.
      * @returns {object} - An object with item names as keys and counts as values.
-     * @example
-     * let inventory = world.getInventoryCounts(bot);
-     * let oakLogCount = inventory['oak_log'];
-     * let hasWoodenPickaxe = inventory['wooden_pickaxe'] > 0;
      **/
     let inventory = {};
     for (const slot of bot.inventory.slots) {
@@ -287,8 +269,6 @@ export function getCraftableItems(bot) {
      * Get a list of all items that can be crafted with the bot's current inventory.
      * @param {Bot} bot - The bot to get the craftable items for.
      * @returns {string[]} - A list of all items that can be crafted.
-     * @example
-     * let craftableItems = world.getCraftableItems(bot);
      **/
     let table = getNearestBlock(bot, 'crafting_table');
     if (!table) {
@@ -314,9 +294,6 @@ export function getPosition(bot) {
      * Get your position in the world (Note that y is vertical).
      * @param {Bot} bot - The bot to get the position for.
      * @returns {Vec3} - An object with x, y, and x attributes representing the position of the bot.
-     * @example
-     * let position = world.getPosition(bot);
-     * let x = position.x;
      **/
     return bot.entity.position;
 }
@@ -327,8 +304,6 @@ export function getNearbyEntityTypes(bot) {
      * Get a list of all nearby mob types.
      * @param {Bot} bot - The bot to get nearby mobs for.
      * @returns {string[]} - A list of all nearby mobs.
-     * @example
-     * let mobs = world.getNearbyEntityTypes(bot);
      **/
     let mobs = getNearbyEntities(bot, 16);
     let found = [];
@@ -354,8 +329,6 @@ export function getNearbyPlayerNames(bot) {
      * Get a list of all nearby player names.
      * @param {Bot} bot - The bot to get nearby players for.
      * @returns {string[]} - A list of all nearby players.
-     * @example
-     * let players = world.getNearbyPlayerNames(bot);
      **/
     let players = getNearbyPlayers(bot, 64);
     let found = [];
@@ -374,8 +347,6 @@ export function getNearbyBlockTypes(bot, distance=16) {
      * @param {Bot} bot - The bot to get nearby blocks for.
      * @param {number} distance - The maximum distance to search, default 16.
      * @returns {string[]} - A list of all nearby blocks.
-     * @example
-     * let blocks = world.getNearbyBlockTypes(bot);
      **/
     let blocks = getNearestBlocks(bot, null, distance);
     let found = [];
@@ -423,8 +394,6 @@ export function getBiomeName(bot) {
      * Get the name of the biome the bot is in.
      * @param {Bot} bot - The bot to get the biome for.
      * @returns {string} - The name of the biome.
-     * @example
-     * let biome = world.getBiomeName(bot);
      **/
     const biomeId = bot.world.getBiome(bot.entity.position);
     return mc.getAllBiomes()[biomeId].name;

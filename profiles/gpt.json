@@ -1,6 +1,5 @@
 {
     "name": "gpt",
-
     "model": {
         "model": "gpt-5.4",
         "params": {

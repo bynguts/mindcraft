@@ -1,0 +1,5 @@
+{
+    "name": "gemma",
+    "model": "lmstudio/qwen3-vl-4b",
+    "voice": ""
+}

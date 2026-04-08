@@ -19,7 +19,7 @@ import { speak } from './speak.js';
 import { log, validateNameFormat, handleDisconnection } from './connection_handler.js';
 
 export class Agent {
-    async start(load_mem=false, init_message=null, count_id=0) {
+    async start(load_mem = false, init_message = null, count_id = 0) {
         this.last_sender = null;
         this.count_id = count_id;
         this._disconnectHandled = false;
@@ -29,7 +29,7 @@ export class Agent {
         this.prompter = new Prompter(this, settings.profile);
         this.name = (this.prompter.getName() || '').trim();
         console.log(`Initializing agent ${this.name}...`);
-        
+
         // Validate Name Format
         // connection_handler now ensures the message has [LoginGuard] prefix
         const nameCheck = validateNameFormat(this.name);
@@ -38,7 +38,7 @@ export class Agent {
             process.exit(1);
             return;
         }
-        
+
         this.history = new History(this);
         this.coder = new Coder(this);
         this.npc = new NPCContoller(this);
@@ -64,7 +64,7 @@ export class Agent {
 
         console.log(this.name, 'logging into minecraft...');
         this.bot = initBot(this.name);
-        
+
         // Connection Handler
         const onDisconnect = (event, reason) => {
             if (this._disconnectHandled) return;
@@ -73,18 +73,18 @@ export class Agent {
             // Log and Analyze
             // handleDisconnection handles logging to console and server
             const { type } = handleDisconnection(this.name, reason);
-     
+
             process.exit(1);
         };
-        
+
         // Bind events
         this.bot.once('kicked', (reason) => onDisconnect('Kicked', reason));
         this.bot.once('end', (reason) => onDisconnect('Disconnected', reason));
         this.bot.on('error', (err) => {
             if (String(err).includes('Duplicate') || String(err).includes('ECONNREFUSED')) {
-                 onDisconnect('Error', err);
+                onDisconnect('Error', err);
             } else {
-                 log(this.name, `[LoginGuard] Connection Error: ${String(err)}`);
+                log(this.name, `[LoginGuard] Connection Error: ${String(err)}`);
             }
         });
 
@@ -93,14 +93,14 @@ export class Agent {
         this.bot.on('login', () => {
             console.log(this.name, 'logged in!');
             serverProxy.login();
-            
+
             // Set skin for profile, requires Fabric Tailor. (https://modrinth.com/mod/fabrictailor)
             if (this.prompter.profile.skin)
                 this.bot.chat(`/skin set URL ${this.prompter.profile.skin.model} ${this.prompter.profile.skin.path}`);
             else
                 this.bot.chat(`/skin clear`);
         });
-		const spawnTimeoutDuration = settings.spawn_timeout;
+        const spawnTimeoutDuration = settings.spawn_timeout;
         const spawnTimeout = setTimeout(() => {
             const msg = `Bot has not spawned after ${spawnTimeoutDuration} seconds. Exiting.`;
             log(this.name, msg);
@@ -115,13 +115,13 @@ export class Agent {
 
                 // wait for a bit so stats are not undefined
                 await new Promise((resolve) => setTimeout(resolve, 1000));
-                
+
                 console.log(`${this.name} spawned.`);
                 this.clearBotLogs();
-              
+
                 this._setupEventHandlers(save_data, init_message);
                 this.startEvents();
-              
+
                 if (!load_mem) {
                     if (settings.task) {
                         this.task.initBotTask();
@@ -147,40 +147,74 @@ export class Agent {
     async _setupEventHandlers(save_data, init_message) {
         const ignore_messages = [
             "Set own game mode to",
+            "ClearLag",
+            "[ClearLag]",
+            "Items on ground will vanish",
             "Set the time to",
             "Set the difficulty to",
             "Teleported ",
             "Set the weather to",
             "Gamerule "
         ];
-        
+
         const respondFunc = async (username, message) => {
             if (message === "") return;
             if (username === this.name) return;
-            if (settings.only_chat_with.length > 0 && !settings.only_chat_with.includes(username)) return;
+
+            // --- DISCORD CLEANER OPERATION ---
+            let finalUsername = username;
+            let finalMessage = message;
+
+            if (message.includes('»')) {
+                const splitMsg = message.split('»');
+                let rawName = splitMsg[0].trim();
+                finalMessage = splitMsg[1].trim();
+                finalUsername = rawName.replace('[Discord]', '').trim();
+            }
+            // ----------------------------------------------
+
+            // === TOKEN SAVER: ONLY RESPOND WHEN CALLED ===
+            const botName = this.name.toLowerCase(); // "byn"
+            const textLcd = finalMessage.toLowerCase();
+
+            // Define isMentioned here
+            const isMentioned = textLcd.includes(botName) || textLcd.includes("Byn");
+
+            // If the bot is not called, stay silent (skip function) - Except from Web UI (ADMIN)
+            if (!isMentioned && username !== 'ADMIN') {
+                return;
+            }
+            // ======================================================
+
+            // Check if this name is in the 'Boleh Chat' list (settings.js) - Except from Web UI (ADMIN)
+            if (settings.only_chat_with.length > 0 && !settings.only_chat_with.includes(finalUsername) && username !== 'ADMIN') return;
+
             try {
-                if (ignore_messages.some((m) => message.startsWith(m))) return;
+                // Filter server spam messages (ClearLag, etc)
+                if (ignore_messages.some((m) => finalMessage.includes(m))) return;
 
                 this.shut_up = false;
 
-                console.log(this.name, 'received message from', username, ':', message);
+                // DC USERNAMES WILL APPEAR IN THE TERMINAL
+                console.log(`${this.name} detected chat from: ${finalUsername} -> ${finalMessage}`);
 
-                if (convoManager.isOtherAgent(username)) {
-                    console.warn('received whisper from other bot??')
+                if (convoManager.isOtherAgent(finalUsername)) {
+                    console.warn('Message from another bot ignored.');
                 }
                 else {
-                    let translation = await handleEnglishTranslation(message);
-                    this.handleMessage(username, translation);
+                    let translation = await handleEnglishTranslation(finalMessage);
+                    // Send clean name to AI brain
+                    this.handleMessage(finalUsername, translation);
                 }
             } catch (error) {
                 console.error('Error handling message:', error);
             }
         }
 
-		this.respondFunc = respondFunc;
+        this.respondFunc = respondFunc;
 
         this.bot.on('whisper', respondFunc);
-        
+
         this.bot.on('chat', (username, message) => {
             if (serverProxy.getNumOtherAgents() > 0) return;
             // only respond to open chat messages when there are no other agents
@@ -214,13 +248,13 @@ export class Agent {
             await this.handleMessage('system', init_message, 2);
         }
         else {
-            this.openChat("Hello world! I am "+this.name);
+            this.openChat("Hello world! I am " + this.name);
         }
     }
 
     checkAllPlayersPresent() {
         if (!this.task || !this.task.agent_names) {
-          return;
+            return;
         }
 
         const missingPlayers = this.task.agent_names.filter(name => !this.bot.players[name]);
@@ -251,7 +285,7 @@ export class Agent {
         convoManager.endAllConversations();
     }
 
-    async handleMessage(source, message, max_responses=null) {
+    async handleMessage(source, message, max_responses = null) {
         await this.checkTaskDone();
         if (!source || !message) {
             console.warn('Received empty message from', source);
@@ -283,7 +317,7 @@ export class Agent {
                     this.history.add(source, message);
                 }
                 let execute_res = await executeCommand(this, message);
-                if (execute_res) 
+                if (execute_res)
                     this.routeResponse(source, execute_res);
                 return true;
             }
@@ -297,7 +331,7 @@ export class Agent {
         console.log('received message from', source, ':', message);
 
         const checkInterrupt = () => this.self_prompter.shouldInterrupt(self_prompt) || this.shut_up || convoManager.responseScheduledFor(source);
-        
+
         let behavior_log = this.bot.modes.flushBehaviorLog().trim();
         if (behavior_log.length > 0) {
             const MAX_LOG = 500;
@@ -314,7 +348,7 @@ export class Agent {
 
         if (!self_prompt && this.self_prompter.isActive()) // message is from user during self-prompting
             max_responses = 1; // force only respond to this message, then let self-prompting take over
-        for (let i=0; i<max_responses; i++) {
+        for (let i = 0; i < max_responses; i++) {
             if (checkInterrupt()) break;
             let history = this.history.getHistory();
             let res = await this.prompter.promptConvo(history);
@@ -331,7 +365,7 @@ export class Agent {
             if (command_name) { // contains query or command
                 res = truncCommandMessage(res); // everything after the command is ignored
                 this.history.add(this.name, res);
-                
+
                 if (!commandExists(command_name)) {
                     this.history.add('system', `Command ${command_name} does not exist.`);
                     console.warn('Agent hallucinated command:', command_name)
@@ -374,7 +408,7 @@ export class Agent {
                 this.routeResponse(source, res);
                 break;
             }
-            
+
             this.history.save();
         }
 
@@ -423,7 +457,7 @@ export class Agent {
             if (settings.speak) {
                 speak(to_translate, this.prompter.profile.speak_model);
             }
-            if (settings.chat_ingame) {this.bot.chat(message);}
+            if (settings.chat_ingame) { this.bot.chat(message); }
             sendOutputToServer(this.name, message);
         }
     }
@@ -432,13 +466,13 @@ export class Agent {
         // Custom events
         this.bot.on('time', () => {
             if (this.bot.time.timeOfDay == 0)
-            this.bot.emit('sunrise');
+                this.bot.emit('sunrise');
             else if (this.bot.time.timeOfDay == 6000)
-            this.bot.emit('noon');
+                this.bot.emit('noon');
             else if (this.bot.time.timeOfDay == 12000)
-            this.bot.emit('sunset');
+                this.bot.emit('sunset');
             else if (this.bot.time.timeOfDay == 18000)
-            this.bot.emit('midnight');
+                this.bot.emit('midnight');
         });
 
         let prev_health = this.bot.health;
@@ -452,7 +486,7 @@ export class Agent {
             prev_health = this.bot.health;
         });
         // Logging callbacks
-        this.bot.on('error' , (err) => {
+        this.bot.on('error', (err) => {
             console.error('Error event!', err);
         });
         // Use connection handler for runtime disconnects
@@ -473,6 +507,9 @@ export class Agent {
             }
         });
         this.bot.on('messagestr', async (message, _, jsonMsg) => {
+
+            console.log("[SERVER SPY] ->", message);
+            // 1. Death Detection (Default)
             if (jsonMsg.translate && jsonMsg.translate.startsWith('death') && message.startsWith(this.name)) {
                 console.log('Agent died: ', message);
                 let death_pos = this.bot.entity.position;
@@ -484,6 +521,26 @@ export class Agent {
                 let dimention = this.bot.game.dimension;
                 this.handleMessage('system', `You died at position ${death_pos_text || "unknown"} in the ${dimention} dimension with the final message: '${message}'. Your place of death is saved as 'last_death_position' if you want to return. Previous actions were stopped and you have respawned.`);
             }
+
+            // --- 2. SPECIAL DISCORDSRV ROUTE (MISSING) ---
+            // --- 2. SPECIAL DISCORDSRV ROUTE (FAIL-SAFE VERSION) ---
+            if (message.includes('[Discord') && message.includes('»')) {
+                // Split based on symbol »
+                const parts = message.split('»');
+
+                // parts[0] contains: "[Discord | admin jir] by2n"
+                // Split again based on ']', then take the last part (username)
+                const namePart = parts[0].split(']').pop();
+
+                const finalUsername = namePart.trim(); // Clean result: "by2n"
+                const finalMessage = parts[1].trim(); // Clean result: "Huu"
+
+                // Throw to respondFunc!
+                if (this.respondFunc) {
+                    this.respondFunc(finalUsername, finalMessage);
+                }
+            }
+            // -----------------------------------------------------
         });
         this.bot.on('idle', () => {
             this.bot.clearControlStates();
@@ -526,11 +583,11 @@ export class Agent {
     isIdle() {
         return !this.actions.executing;
     }
-    
 
-    cleanKill(msg='Killing agent process...', code=1) {
+
+    cleanKill(msg = 'Killing agent process...', code = 1) {
         this.history.add('system', msg);
-        this.bot.chat(code > 1 ? 'Restarting.': 'Exiting.');
+        this.bot.chat(code > 1 ? 'Restarting.' : 'Exiting.');
         this.history.save();
         process.exit(code);
     }
@@ -540,8 +597,7 @@ export class Agent {
             if (res) {
                 await this.history.add('system', `Task ended with score : ${res.score}`);
                 await this.history.save();
-                // await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 second for save to complete
-                console.log('Task finished:', res.message);
+                // await new Promise(resolve => setTimeout(resolve, 3000))
                 this.killAll();
             }
         }

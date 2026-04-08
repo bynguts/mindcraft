@@ -14,10 +14,17 @@ export function getCommand(name) {
     return commandMap[name];
 }
 
+// Fitur suntik command baru secara instan (Hot-Reload)
+export function addCommand(command) {
+    commandList.push(command);
+    commandMap[command.name] = command;
+    console.log(`[System] New command ${command.name} successfully injected into AI brain!`);
+}
+
 export function blacklistCommands(commands) {
     const unblockable = ['!stop', '!stats', '!inventory', '!goal'];
     for (let command_name of commands) {
-        if (unblockable.includes(command_name)){
+        if (unblockable.includes(command_name)) {
             console.warn(`Command ${command_name} is unblockable`);
             continue;
         }
@@ -48,7 +55,7 @@ export function commandExists(commandName) {
  * @returns {boolean | null} the boolean or `null` if it could not be parsed.
  * */
 function parseBoolean(input) {
-    switch(input.toLowerCase()) {
+    switch (input.toLowerCase()) {
         case 'false': //These are interpreted as flase;
         case 'f':
         case '0':
@@ -98,32 +105,32 @@ export function parseCommandMessage(message) {
     const commandMatch = message.match(commandRegex);
     if (!commandMatch) return `Command is incorrectly formatted`;
 
-    const commandName = "!"+commandMatch[1];
+    const commandName = "!" + commandMatch[1];
 
     let args;
     if (commandMatch[2]) args = commandMatch[2].match(argRegex);
     else args = [];
 
     const command = getCommand(commandName);
-    if(!command) return `${commandName} is not a command.`
+    if (!command) return `${commandName} is not a command.`
 
     const params = commandParams(command);
     const paramNames = commandParamNames(command);
-    
+
     if (args.length !== params.length)
         return `Command ${command.name} was given ${args.length} args, but requires ${params.length} args.`;
 
-    
+
     for (let i = 0; i < args.length; i++) {
         const param = params[i];
         //Remove any extra characters
         let arg = args[i].trim();
         if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
-            arg = arg.substring(1, arg.length-1);
+            arg = arg.substring(1, arg.length - 1);
         }
-        
+
         //Convert to the correct type
-        switch(param.type) {
+        switch (param.type) {
             case 'int':
                 arg = Number.parseInt(arg); break;
             case 'float':
@@ -140,19 +147,19 @@ export function parseCommandMessage(message) {
             default:
                 throw new Error(`Command '${commandName}' parameter '${paramNames[i]}' has an unknown type: ${param.type}`);
         }
-        if(arg === null || Number.isNaN(arg))
+        if (arg === null || Number.isNaN(arg))
             return `Error: Param '${paramNames[i]}' must be of type ${param.type}.`
 
-        if(typeof arg === 'number') { //Check the domain of numbers
+        if (typeof arg === 'number') { //Check the domain of numbers
             const domain = param.domain;
-            if(domain) {
+            if (domain) {
                 /**
                  * Javascript has a built in object for sets but not intervals.
                  * Currently the interval (lowerbound,upperbound] is represented as an Array: `[lowerbound, upperbound, '(]']`
                  */
                 if (!domain[2]) domain[2] = '[)'; //By default, lower bound is included. Upper is not.
 
-                if(!checkInInterval(arg, ...domain)) {
+                if (!checkInInterval(arg, ...domain)) {
                     return `Error: Param '${paramNames[i]}' must be an element of ${domain[2][0]}${domain[0]}, ${domain[1]}${domain[2][1]}.`;
                     //Alternatively arg could be set to the nearest value in the domain.
                 }
@@ -160,16 +167,16 @@ export function parseCommandMessage(message) {
                 console.warn(`Command '${commandName}' parameter '${paramNames[i]}' has no domain set. Expect any value [-Infinity, Infinity].`)
                 suppressNoDomainWarning = true; //Don't spam console. Only give the warning once.
             }
-        } else if(param.type === 'BlockName') { //Check that there is a block with this name
-            if(getBlockId(arg) == null) return  `Invalid block type: ${arg}.`
-        } else if(param.type === 'ItemName') { //Check that there is an item with this name
-            if(getItemId(arg) == null) return `Invalid item type: ${arg}.`
-        } else if(param.type === 'BlockOrItemName') {
-            if(getBlockId(arg) == null && getItemId(arg) == null) return  `Invalid block or item type: ${arg}.`
+        } else if (param.type === 'BlockName') { //Check that there is a block with this name
+            if (getBlockId(arg) == null) return `Invalid block type: ${arg}.`
+        } else if (param.type === 'ItemName') { //Check that there is an item with this name
+            if (getItemId(arg) == null) return `Invalid item type: ${arg}.`
+        } else if (param.type === 'BlockOrItemName') {
+            if (getBlockId(arg) == null && getItemId(arg) == null) return `Invalid block or item type: ${arg}.`
         }
         args[i] = arg;
     }
-    
+
     return { commandName, args };
 }
 
@@ -233,12 +240,12 @@ export function getCommandDocs(agent) {
     const typeTranslations = {
         //This was added to keep the prompt the same as before type checks were implemented.
         //If the language model is giving invalid inputs changing this might help.
-        'float':             'number',
-        'int':               'number',
-        'BlockName':         'string',
-        'ItemName':          'string',
-        'BlockOrItemName':   'string',
-        'boolean':           'bool'
+        'float': 'number',
+        'int': 'number',
+        'BlockName': 'string',
+        'ItemName': 'string',
+        'BlockOrItemName': 'string',
+        'boolean': 'bool'
     }
     let docs = `\n*COMMAND DOCS\n You can use the following commands to perform actions and get information about the world. 
     Use the commands with the syntax: !commandName or !commandName("arg1", 1.2, ...) if the command takes arguments.\n
@@ -251,7 +258,7 @@ export function getCommandDocs(agent) {
         if (command.params) {
             docs += 'Params:\n';
             for (let param in command.params) {
-                docs += `${param}: (${typeTranslations[command.params[param].type]??command.params[param].type}) ${command.params[param].description}\n`;
+                docs += `${param}: (${typeTranslations[command.params[param].type] ?? command.params[param].type}) ${command.params[param].description}\n`;
             }
         }
     }

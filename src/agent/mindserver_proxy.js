@@ -11,7 +11,7 @@ class MindServerProxy {
         if (MindServerProxy.instance) {
             return MindServerProxy.instance;
         }
-        
+
         this.socket = null;
         this.connected = false;
         this.agents = [];
@@ -20,9 +20,9 @@ class MindServerProxy {
 
     async connect(name, port) {
         if (this.connected) return;
-        
+
         this.name = name;
-        this.socket = io(`http://localhost:${port}`);
+        this.socket = io(`http://127.0.0.1:${port}`);
 
         await new Promise((resolve, reject) => {
             this.socket.on('connect', resolve);
@@ -60,7 +60,7 @@ class MindServerProxy {
             console.log(`Restarting agent: ${agentName}`);
             this.agent.cleanKill();
         });
-		
+
         this.socket.on('send-message', (data) => {
             try {
                 this.agent.respondFunc(data.from, data.message);

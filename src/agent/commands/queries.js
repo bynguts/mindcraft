@@ -13,7 +13,7 @@ const pad = (str) => {
 export const queryList = [
     {
         name: "!stats",
-        description: "Get your bot's location, health, hunger, and time of day.", 
+        description: "Get location, health, hunger, and time.",  
         perform: function (agent) {
             let bot = agent.bot;
             let res = 'STATS';
@@ -102,7 +102,7 @@ export const queryList = [
     },
     {
         name: "!nearbyBlocks",
-        description: "Get the blocks near the bot.",
+        description: "Get nearby blocks.",
         perform: function (agent) {
             let bot = agent.bot;
             let res = 'NEARBY_BLOCKS';
@@ -131,7 +131,7 @@ export const queryList = [
     },
     {
         name: "!craftable",
-        description: "Get the craftable items with the bot's inventory.",
+        description: "Get craftable items from inventory.",
         perform: function (agent) {
             let craftable = world.getCraftableItems(agent.bot);
             let res = 'CRAFTABLE_ITEMS';
@@ -214,7 +214,7 @@ export const queryList = [
     },
     {
         name: "!modes",
-        description: "Get all available modes and their docs and see which are on/off.",
+        description: "Get status of all modes.",
         perform: function (agent) {
             return agent.bot.modes.getDocs();
         }
@@ -268,7 +268,7 @@ export const queryList = [
     },
     {
         name: '!getCraftingPlan',
-        description: "Provides a comprehensive crafting plan for a specified item. This includes a breakdown of required ingredients, the exact quantities needed, and an analysis of missing ingredients or extra items needed based on the bot's current inventory.",
+        description: "Get a comprehensive crafting plan for an item.",
         params: {
             targetItem: { 
                 type: 'string', 
@@ -310,7 +310,7 @@ export const queryList = [
     },
     {
         name: '!searchWiki',
-        description: 'Search the Minecraft Wiki for the given query.',
+        description: 'Search Minecraft Wiki for query.',
         params: {
             'query': { type: 'string', description: 'The query to search for.' }
         },

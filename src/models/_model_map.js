@@ -32,7 +32,7 @@ const apiMap = await (async () => {
 
 export function selectAPI(profile) {
     if (typeof profile === 'string' || profile instanceof String) {
-        profile = {model: profile};
+        profile = { model: profile };
     }
     // backwards compatibility with local->ollama
     if (profile.api?.includes('local') || profile.model?.includes('local')) {
@@ -48,7 +48,8 @@ export function selectAPI(profile) {
         }
         else {
             // check for some common models that do not require prefixes
-            if (profile.model.includes('gpt') || profile.model.includes('o1')|| profile.model.includes('o3'))
+            // ---> DI SINI KITA TAMBAHKAN 'llama' AGAR MASUK KE JALUR OPENAI <---
+            if (profile.model.includes('gpt') || profile.model.includes('o1') || profile.model.includes('o3') || profile.model.includes('llama'))
                 profile.api = 'openai';
             else if (profile.model.includes('claude'))
                 profile.api = 'anthropic';
