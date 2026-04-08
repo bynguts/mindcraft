@@ -4,15 +4,14 @@ import path from 'path';
 export class LearnedSkills {
     constructor(agent) {
         this.agent = agent;
-        // Path to the saved_skills folder and metadata.json
-        this.dirPath = path.join(process.cwd(), 'saved_skills');
+        // Use standard paths consistent with the project structure
+        this.dirPath = path.join(process.cwd(), 'bots', 'saved_skills');
         this.metadataPath = path.join(this.dirPath, 'metadata.json');
         this.metadata = {};
 
         this.init();
     }
 
-    // Initialize the library: create folder/file if they don't exist
     init() {
         if (!fs.existsSync(this.dirPath)) {
             fs.mkdirSync(this.dirPath, { recursive: true });
@@ -24,28 +23,28 @@ export class LearnedSkills {
                 this.metadata = JSON.parse(rawData);
                 console.log(`[LearnedSkills] Loaded ${Object.keys(this.metadata).length} skills metadata.`);
             } catch (error) {
-                console.error('[LearnedSkills] Error parsing metadata.json, creating a new one.');
+                console.error('[LearnedSkills] Error parsing metadata.json, resetting.');
                 this.metadata = {};
                 this.save();
             }
         } else {
-            this.save(); // Create empty metadata.json
+            this.save();
         }
     }
 
-    // Save current metadata to JSON
     save() {
         fs.writeFileSync(this.metadataPath, JSON.stringify(this.metadata, null, 4));
     }
 
-    // Add a new skill or update its description/tags
+    // Register a new skill with explicit success/fail tracking
     registerSkill(skillName, description, tags = []) {
         if (!this.metadata[skillName]) {
             this.metadata[skillName] = {
                 description: description,
                 tags: tags,
-                successRate: 1.0, // Starts at 100% confidence
-                usageCount: 0
+                success_count: 0,
+                fail_count: 0,
+                learned_at: new Date().toISOString()
             };
         } else {
             this.metadata[skillName].description = description;
@@ -55,23 +54,39 @@ export class LearnedSkills {
         console.log(`[LearnedSkills] Registered skill: ${skillName}`);
     }
 
-    // Update the success rate after the bot attempts to use the skill
-    updateSkillResult(skillName, isSuccess) {
-        if (this.metadata[skillName]) {
-            const skill = this.metadata[skillName];
+    // PHASE 3: Update performance and auto-delete low-quality skills
+    updateSkillPerformance(skillName, isSuccess) {
+        if (!this.metadata[skillName]) return;
 
-            let currentWins = skill.successRate * skill.usageCount;
-            if (isSuccess) currentWins += 1;
-
-            skill.usageCount += 1;
-            skill.successRate = Number((currentWins / skill.usageCount).toFixed(2));
-
-            this.save();
-            console.log(`[LearnedSkills] Updated ${skillName}: Success Rate is now ${skill.successRate} after ${skill.usageCount} uses.`);
+        const skill = this.metadata[skillName];
+        if (isSuccess) {
+            skill.success_count++;
+        } else {
+            skill.fail_count++;
         }
+
+        const totalUses = skill.success_count + skill.fail_count;
+        const successRate = skill.success_count / totalUses;
+
+        // CRITICAL LOGIC: Auto-delete if usage >= 3 and success rate < 30%
+        if (totalUses >= 3 && successRate < 0.3) {
+            console.warn(`[LearnedSkills] DELETING low-quality skill: ${skillName} (Rate: ${(successRate * 100).toFixed(1)}%)`);
+
+            // Delete the physical JS file
+            const filePath = path.join(this.dirPath, `${skillName}.js`);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+
+            // Remove from metadata
+            delete this.metadata[skillName];
+        } else {
+            console.log(`[LearnedSkills] Updated ${skillName}: Success Rate is ${(successRate * 100).toFixed(1)}% after ${totalUses} uses.`);
+        }
+
+        this.save();
     }
 
-    // Search skills based on a query (tag or keyword in description)
     searchRelevantSkills(query) {
         const lowerQuery = query.toLowerCase();
         let results = [];
@@ -82,17 +97,13 @@ export class LearnedSkills {
             const matchName = skillName.toLowerCase().includes(lowerQuery);
 
             if (matchTag || matchDesc || matchName) {
-                results.push({ name: skillName, ...data });
+                const total = data.success_count + data.fail_count;
+                const rate = total > 0 ? (data.success_count / total) : 1.0;
+                results.push({ name: skillName, ...data, rate, total });
             }
         }
 
-        results.sort((a, b) => {
-            if (b.successRate !== a.successRate) {
-                return b.successRate - a.successRate;
-            }
-            return b.usageCount - a.usageCount;
-        });
-
+        results.sort((a, b) => b.rate - a.rate || b.total - a.total);
         return results;
     }
 
@@ -102,7 +113,7 @@ export class LearnedSkills {
 
         let output = `Relevant saved skills for '${query}':\n`;
         skills.forEach(s => {
-            output += `- ${s.name}: ${s.description} (Success: ${s.successRate * 100}%, Uses: ${s.usageCount})\n`;
+            output += `- ${s.name}: ${s.description} (Success: ${(s.rate * 100).toFixed(0)}%, Uses: ${s.total})\n`;
         });
         return output;
     }

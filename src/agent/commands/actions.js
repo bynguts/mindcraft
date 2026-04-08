@@ -89,8 +89,24 @@ export const actionsList = [
                                     world: worldLib,
                                     Vec3
                                 });
-                                const mainFn = compartment.evaluate(src);
-                                await mainFn(agent.bot);
+
+                                try {
+                                    const mainFn = compartment.evaluate(src);
+                                    await mainFn(agent.bot);
+
+                                    // SUCCESS TRACKING: Report successful execution
+                                    if (agent.learned_skills) {
+                                        agent.learned_skills.updateSkillPerformance(cleanName, true);
+                                    }
+                                } catch (err) {
+                                    console.error(`Skill ${cleanName} execution failed:`, err);
+
+                                    // FAILURE TRACKING: Report failed execution
+                                    if (agent.learned_skills) {
+                                        agent.learned_skills.updateSkillPerformance(cleanName, false);
+                                    }
+                                    throw err;
+                                }
                             })
                         };
 
@@ -705,11 +721,27 @@ if (fs.existsSync(saveFolder)) {
                         world: worldLib,
                         Vec3
                     });
-                    const mainFn = compartment.evaluate(src);
-                    await mainFn(agent.bot);
+
+                    try {
+                        const mainFn = compartment.evaluate(src);
+                        await mainFn(agent.bot);
+
+                        // PHASE 3: Report Success
+                        if (agent.learned_skills) {
+                            agent.learned_skills.updateSkillPerformance(commandName, true);
+                        }
+                    } catch (err) {
+                        console.error(`[Auto-Skill] ${commandName} execution failed:`, err);
+
+                        // PHASE 3: Report Failure
+                        if (agent.learned_skills) {
+                            agent.learned_skills.updateSkillPerformance(commandName, false);
+                        }
+                        throw err; // Keep throwing so the agent knows it failed
+                    }
                 })
             });
-            console.log(`[Auto-Load] New skill loaded: !${commandName}`);
+            console.log(`[Auto-Load] New skill loaded with performance tracking: !${commandName}`);
         }
     }
 }

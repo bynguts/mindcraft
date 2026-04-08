@@ -59,10 +59,7 @@ const settings = {
     "block_place_delay": 0, // delay between placing blocks (ms) if using newAction. helps avoid bot being kicked by anti-cheat mechanisms on servers.
 
     "log_all_prompts": false, // log ALL prompts to file
-
-    "self_prompt": true,
-    "self_prompt_interval": 30000, // 30-second delay
-    "max_self_prompts": 5 // Max 5 times of self-prompting before giving up
+    
 }
 
 export default settings;
