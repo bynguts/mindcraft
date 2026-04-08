@@ -103,7 +103,7 @@ To use different accounts, Mindcraft will connect with the account that the Mine
 
 ## Tasks
 
-Tasks automatically start the bot with a prompt and a goal item to aquire or blueprint to construct. To run a simple task that involves collecting 4 oak_logs run 
+Tasks automatically start the bot with a prompt and a goal item to acquire or blueprint to construct. To run a simple task that involves collecting 4 oak_logs run 
 
 `node main.js --task_path tasks/basic/single_agent.json --task_id gather_oak_logs`
 
@@ -247,3 +247,9 @@ This work is published in the paper [Collaborating Action by Action: A Multi-age
   url = {https://arxiv.org/abs/2504.17950},
 }
 ```
+
+## Contributors
+
+Thanks to everyone who has submitted issues on and off Github, made suggestions, and generally helped make this a better project.
+
+![Contributors](https://contrib.rocks/image?repo=mindcraft-bots/mindcraft)
