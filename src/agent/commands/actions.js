@@ -75,6 +75,9 @@ export const actionsList = [
                         if (!fs.existsSync(saveFolder)) fs.mkdirSync(saveFolder, { recursive: true });
                         fs.copyFileSync(lastFile, `${saveFolder}${cleanName}.js`);
 
+                        if (agent.learned_skills) {
+                            agent.learned_skills.registerSkill(cleanName, prompt, ["auto-generated", "action"]);
+                        }
                         const newCommand = {
                             name: `!${cleanName}`,
                             description: `Automatic skill: ${cleanName.replace(/_/g, ' ')}. Use this !${cleanName} command if the user asks you to perform a similar action or one with the same meaning.`,

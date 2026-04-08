@@ -13,7 +13,7 @@ const pad = (str) => {
 export const queryList = [
     {
         name: "!stats",
-        description: "Get location, health, hunger, and time.",  
+        description: "Get location, health, hunger, and time.",
         perform: function (agent) {
             let bot = agent.bot;
             let res = 'STATS';
@@ -108,7 +108,7 @@ export const queryList = [
             let res = 'NEARBY_BLOCKS';
             let blocks = world.getNearestBlocks(bot);
             let block_details = new Set();
-            
+
             for (let block of blocks) {
                 let details = block.name;
                 if (block.name === 'water' || block.name === 'lava') {
@@ -121,7 +121,7 @@ export const queryList = [
             }
             if (block_details.size === 0) {
                 res += ': none';
-            } 
+            }
             else {
                 res += '\n- ' + world.getSurroundingBlocks(bot).join('\n- ');
                 res += `\n- First Solid Block Above Head: ${world.getFirstBlockAboveHead(bot, null, 32)}`;
@@ -166,16 +166,16 @@ export const queryList = [
             let villagerIds = [];
             let babyVillagerIds = [];
             let villagerDetails = []; // Store detailed villager info including profession
-            
+
             for (const entity of nearbyEntities) {
                 if (entity.type === 'player' || entity.name === 'item')
                     continue;
-                    
+
                 if (!entityCounts[entity.name]) {
                     entityCounts[entity.name] = 0;
                 }
                 entityCounts[entity.name]++;
-                
+
                 if (entity.name === 'villager') {
                     if (entity.metadata && entity.metadata[16] === 1) {
                         babyVillagerIds.push(entity.id);
@@ -189,7 +189,7 @@ export const queryList = [
                     }
                 }
             }
-            
+
             for (const [entityType, count] of Object.entries(entityCounts)) {
                 if (entityType === 'villager') {
                     let villagerInfo = `${count} ${entityType}(s)`;
@@ -205,7 +205,7 @@ export const queryList = [
                     res += `\n- entities: ${count} ${entityType}(s)`;
                 }
             }
-            
+
             if (res == 'NEARBY_ENTITIES') {
                 res += ': none';
             }
@@ -225,7 +225,7 @@ export const queryList = [
         perform: async function (agent) {
             return "Saved place names: " + agent.memory_bank.getKeys();
         }
-    }, 
+    },
     {
         name: '!checkBlueprintLevel',
         description: 'Check if the level is complete and what blocks still need to be placed for the blueprint',
@@ -237,7 +237,7 @@ export const queryList = [
             console.log(res);
             return pad(res);
         }
-    }, 
+    },
     {
         name: '!checkBlueprint',
         description: 'Check what blocks still need to be placed for the blueprint',
@@ -245,7 +245,7 @@ export const queryList = [
             let res = checkBlueprint(agent);
             return pad(res);
         }
-    }, 
+    },
     {
         name: '!getBlueprint',
         description: 'Get the blueprint for the building',
@@ -253,7 +253,7 @@ export const queryList = [
             let res = agent.task.blueprint.explain();
             return pad(res);
         }
-    }, 
+    },
     {
         name: '!getBlueprintLevel',
         description: 'Get the blueprint for the building',
@@ -270,11 +270,11 @@ export const queryList = [
         name: '!getCraftingPlan',
         description: "Get a comprehensive crafting plan for an item.",
         params: {
-            targetItem: { 
-                type: 'string', 
-                description: 'The item that we are trying to craft' 
+            targetItem: {
+                type: 'string',
+                description: 'The item that we are trying to craft'
             },
-            quantity: { 
+            quantity: {
                 type: 'int',
                 description: 'The quantity of the item that we are trying to craft',
                 optional: true,
@@ -286,7 +286,7 @@ export const queryList = [
             let bot = agent.bot;
 
             // Fetch the bot's inventory
-            const curr_inventory = world.getInventoryCounts(bot); 
+            const curr_inventory = world.getInventoryCounts(bot);
             const target_item = targetItem;
             let existingCount = curr_inventory[target_item] || 0;
             let prefixMessage = '';
@@ -304,8 +304,8 @@ export const queryList = [
                 console.error("Error generating crafting plan:", error);
                 return `An error occurred while generating the crafting plan: ${error.message}`;
             }
-            
-            
+
+
         },
     },
     {
@@ -319,22 +319,49 @@ export const queryList = [
             try {
                 const response = await fetch(url);
                 if (response.status === 404) {
-                  return `${query} was not found on the Minecraft Wiki. Try adjusting your search term.`;
+                    return `${query} was not found on the Minecraft Wiki. Try adjusting your search term.`;
                 }
                 const html = await response.text();
                 const $ = load(html);
-            
+
                 const parserOutput = $("div.mw-parser-output");
-                
+
                 parserOutput.find("table.navbox").remove();
 
                 const divContent = parserOutput.text();
-            
+
                 return divContent.trim();
-              } catch (error) {
+            } catch (error) {
                 console.error("Error fetching or parsing HTML:", error);
                 return `The following error occurred: ${error}`
-              }
+            }
+        }
+    },
+    {
+        name: '!setQuest',
+        description: 'Register a new multi-step quest with subtasks. Use this to break down complex goals into smaller, manageable steps.',
+        params: {
+            'task': { type: 'string', description: 'The main goal description.' },
+            'subtasks': { type: 'string', description: 'A comma-separated list of steps (e.g., "collect wood, craft planks, place blocks").' },
+            'priority': { type: 'int', description: '1 for urgent (highest), 2 for normal, 3 for low.' }
+        },
+        perform: function (agent, task, subtasks, priority) {
+            let subtaskList = subtasks.split(',').map(s => s.trim());
+            agent.memory_bank.addQuest(task, subtaskList, priority);
+            let board = agent.memory_bank.getQuestBoard();
+            return pad(`Successfully registered quest: '${task}'. ${board}`);
+        }
+    },
+    {
+        name: '!nextSubtask',
+        description: 'Mark the current active subtask as completed and check the next one.',
+        perform: function (agent) {
+            let finished = agent.memory_bank.completeNextSubtask();
+            if (finished) {
+                let board = agent.memory_bank.getQuestBoard();
+                return pad(`Successfully completed subtask: '${finished}'. ${board}`);
+            }
+            return pad('No active quests or subtasks to complete right now.');
         }
     },
     {

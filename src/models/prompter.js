@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync, writeFileSync} from 'fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'fs';
 import { Examples } from '../utils/examples.js';
 import { getCommandDocs } from '../agent/commands/index.js';
 import { SkillLibrary } from "../agent/library/skill_library.js";
@@ -44,7 +44,7 @@ export class Prompter {
 
         this.convo_examples = null;
         this.coding_examples = null;
-        
+
         let name = this.profile.name;
         this.cooldown = this.profile.cooldown ? this.profile.cooldown : 0;
         this.last_prompt_time = 0;
@@ -74,7 +74,7 @@ export class Prompter {
             this.vision_model = this.chat_model;
         }
 
-        
+
         let embedding_model_profile = null;
         if (this.profile.embedding) {
             try {
@@ -87,7 +87,7 @@ export class Prompter {
             this.embedding_model = createModel(embedding_model_profile);
         }
         else {
-            this.embedding_model = createModel({api: chat_model_profile.api});
+            this.embedding_model = createModel({ api: chat_model_profile.api });
         }
 
         this.skill_libary = new SkillLibrary(agent, this.embedding_model);
@@ -112,7 +112,7 @@ export class Prompter {
         try {
             this.convo_examples = new Examples(this.embedding_model, settings.num_examples);
             this.coding_examples = new Examples(this.embedding_model, settings.num_examples);
-            
+
             // Wait for both examples to load before proceeding
             await Promise.all([
                 this.convo_examples.load(this.profile.conversation_examples),
@@ -133,7 +133,7 @@ export class Prompter {
         }
     }
 
-    async replaceStrings(prompt, messages, examples=null, to_summarize=[], last_goals=null) {
+    async replaceStrings(prompt, messages, examples = null, to_summarize = [], last_goals = null) {
         prompt = prompt.replaceAll('$NAME', this.agent.name);
 
         if (prompt.includes('$STATS')) {
@@ -149,8 +149,23 @@ export class Prompter {
         if (prompt.includes('$ACTION')) {
             prompt = prompt.replaceAll('$ACTION', this.agent.actions.currentActionLabel);
         }
-        if (prompt.includes('$COMMAND_DOCS'))
-            prompt = prompt.replaceAll('$COMMAND_DOCS', getCommandDocs(this.agent));
+        if (prompt.includes('$COMMAND_DOCS')) {
+            let docs = getCommandDocs(this.agent);
+
+            const last_user_msg = messages.slice().reverse().find(msg => msg.role !== 'system')?.content || '';
+            if (this.agent.learned_skills && last_user_msg) {
+                let relevant_skills = this.agent.learned_skills.getFormattedSkills(last_user_msg);
+                if (!relevant_skills.includes("No relevant")) {
+                    docs += "\n\n" + relevant_skills;
+                }
+            }
+
+            if (this.agent.memory_bank) {
+                docs += this.agent.memory_bank.getQuestBoard();
+            }
+
+            prompt = prompt.replaceAll('$COMMAND_DOCS', docs);
+        }
         if (prompt.includes('$CODE_DOCS')) {
             const code_task_content = messages.slice().reverse().find(msg =>
                 msg.role !== 'system' && msg.content.includes('!newAction(')
@@ -293,7 +308,7 @@ export class Prompter {
         await this.checkCooldown();
         let prompt = this.profile.bot_responder;
         let messages = this.agent.history.getHistory();
-        messages.push({role: 'user', content: new_message});
+        messages.push({ role: 'user', content: new_message });
         prompt = await this.replaceStrings(prompt, null, null, messages);
         let res = await this.chat_model.sendRequest([], prompt);
         return res.trim().toLowerCase() === 'respond';
@@ -314,7 +329,7 @@ export class Prompter {
         let user_message = 'Use the below info to determine what goal to target next\n\n';
         user_message += '$LAST_GOALS\n$STATS\n$INVENTORY\n$CONVO'
         user_message = await this.replaceStrings(user_message, messages, null, null, last_goals);
-        let user_messages = [{role: 'user', content: user_message}];
+        let user_messages = [{ role: 'user', content: user_message }];
 
         let res = await this.chat_model.sendRequest(user_messages, system_message);
 
