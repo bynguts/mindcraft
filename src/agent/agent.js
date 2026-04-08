@@ -24,6 +24,9 @@ export class Agent {
         this.count_id = count_id;
         this._disconnectHandled = false;
 
+        this.lastMessageContent = "";
+        this.lastMessageTime = 0;
+
         // Initialize components
         this.actions = new ActionManager(this);
         this.prompter = new Prompter(this, settings.profile);
@@ -161,6 +164,14 @@ export class Agent {
             if (message === "") return;
             if (username === this.name) return;
 
+            const currentMsg = `${username}:${message}`;
+            const currentTime = Date.now();
+            if (currentMsg === this.lastMessageContent && (currentTime - this.lastMessageTime) < 1000) {
+                return;
+            }
+            this.lastMessageContent = currentMsg;
+            this.lastMessageTime = currentTime;
+
             // --- DISCORD CLEANER OPERATION ---
             let finalUsername = username;
             let finalMessage = message;
@@ -171,7 +182,6 @@ export class Agent {
                 finalMessage = splitMsg[1].trim();
                 finalUsername = rawName.replace('[Discord]', '').trim();
             }
-            // ----------------------------------------------
 
             // === TOKEN SAVER: ONLY RESPOND WHEN CALLED ===
             const botName = this.name.toLowerCase(); // "byn"
@@ -184,7 +194,6 @@ export class Agent {
             if (!isMentioned && username !== 'ADMIN') {
                 return;
             }
-            // ======================================================
 
             // Check if this name is in the 'Boleh Chat' list (settings.js) - Except from Web UI (ADMIN)
             if (settings.only_chat_with.length > 0 && !settings.only_chat_with.includes(finalUsername) && username !== 'ADMIN') return;
