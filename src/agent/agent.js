@@ -17,6 +17,7 @@ import settings from './settings.js';
 import { Task } from './tasks/tasks.js';
 import { speak } from './speak.js';
 import { log, validateNameFormat, handleDisconnection } from './connection_handler.js';
+import { LearnedSkills } from './learned_skills.js';
 
 export class Agent {
     async start(load_mem = false, init_message = null, count_id = 0) {
@@ -46,6 +47,7 @@ export class Agent {
         this.coder = new Coder(this);
         this.npc = new NPCContoller(this);
         this.memory_bank = new MemoryBank();
+        this.learned_skills = new LearnedSkills(this);
         this.self_prompter = new SelfPrompter(this);
         convoManager.initAgent(this);
         await this.prompter.initExamples();
