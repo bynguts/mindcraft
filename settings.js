@@ -48,10 +48,10 @@ const settings = {
     "code_timeout_mins": -1, // minutes code is allowed to run. -1 for no timeout
     "relevant_docs_count": 2, // number of relevant code function docs to select for prompting. -1 for all
 
-    "max_messages": 12, // max number of messages to keep in context
-    "num_examples": 1, // number of examples to give to the model
+    "max_messages": 20, // max number of messages to keep in context
+    "num_examples": 2, // number of examples to give to the model
     "max_commands": -1, // max number of commands that can be used in consecutive responses. -1 for no limit
-    "show_command_syntax": "full", // "full", "shortened", or "none"
+    "show_command_syntax": "shortened", // "full", "shortened", or "none"
     "narrate_behavior": true, // chat simple automatic actions ('Picking up item!')
     "chat_bot_messages": true, // publicly chat messages to other bots
 
@@ -59,7 +59,7 @@ const settings = {
     "block_place_delay": 0, // delay between placing blocks (ms) if using newAction. helps avoid bot being kicked by anti-cheat mechanisms on servers.
 
     "log_all_prompts": false, // log ALL prompts to file
-    
+
 }
 
 export default settings;

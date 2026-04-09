@@ -18,6 +18,7 @@ import { Task } from './tasks/tasks.js';
 import { speak } from './speak.js';
 import { log, validateNameFormat, handleDisconnection } from './connection_handler.js';
 import { LearnedSkills } from './learned_skills.js';
+import { loadSavedSkills } from './commands/actions.js';
 
 export class Agent {
     async start(load_mem = false, init_message = null, count_id = 0) {
@@ -27,6 +28,8 @@ export class Agent {
 
         this.lastMessageContent = "";
         this.lastMessageTime = 0;
+
+        loadSavedSkills();
 
         // Initialize components
         this.actions = new ActionManager(this);

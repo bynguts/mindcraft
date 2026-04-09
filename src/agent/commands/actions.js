@@ -630,66 +630,76 @@ export const actionsList = [
     },
 ];
 
-// FIXED: Strict synchronization between metadata.json and physical files
-const saveFolder = './bots/saved_skills/';
-const metadataPath = `${saveFolder}metadata.json`;
-let validSkills = {};
+// FIXED: Encapsulated auto-load logic to prevent module-scope blocking and crashes.
+let skillsLoaded = false;
 
-// 1. Load the valid skills from metadata first
-if (fs.existsSync(metadataPath)) {
-    try {
-        validSkills = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-    } catch (e) {
-        console.warn('[Auto-Skill] Could not read metadata.json, starting fresh.');
+export function loadSavedSkills() {
+    if (skillsLoaded) return; // Prevent duplicate loading in multi-agent scenarios
+    skillsLoaded = true;
+
+    const saveFolder = './bots/saved_skills/';
+    const metadataPath = `${saveFolder}metadata.json`;
+    let validSkills = {};
+
+    // 1. Load the valid skills from metadata first
+    if (fs.existsSync(metadataPath)) {
+        try {
+            validSkills = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+        } catch (e) {
+            console.warn('[Auto-Skill] Could not read metadata.json, starting fresh.');
+        }
     }
-}
 
-if (fs.existsSync(saveFolder)) {
-    const files = fs.readdirSync(saveFolder);
-    for (const file of files) {
-        if (file.endsWith('.js')) {
-            const commandName = file.replace('.js', '');
+    if (fs.existsSync(saveFolder)) {
+        const files = fs.readdirSync(saveFolder);
+        for (const file of files) {
+            if (file.endsWith('.js')) {
+                const commandName = file.replace('.js', '');
 
-            // 2. NEW: Zombie File Cleanup
-            if (!validSkills[commandName]) {
-                console.log(`[Auto-Skill] Deleting orphaned/outdated zombie skill: ${file}`);
-                fs.unlinkSync(`${saveFolder}${file}`);
-                continue;
+                // 2. Zombie File Cleanup
+                if (!validSkills[commandName]) {
+                    console.log(`[Auto-Skill] Deleting orphaned/outdated zombie skill: ${file}`);
+                    fs.unlinkSync(`${saveFolder}${file}`);
+                    continue;
+                }
+
+                // 3. Load valid skill
+                const newCommand = {
+                    name: `!${commandName}`,
+                    description: validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`,
+                    perform: runAsAction(async (agent) => {
+                        const src = fs.readFileSync(`${saveFolder}${file}`, 'utf8');
+                        const compartment = makeCompartment({
+                            skills: skills,
+                            log: skills.log,
+                            world: worldLib,
+                            Vec3
+                        });
+
+                        try {
+                            const mainFn = compartment.evaluate(src);
+                            await mainFn(agent.bot);
+
+                            // PHASE 3: Report Success
+                            if (agent.learned_skills) {
+                                agent.learned_skills.updateSkillPerformance(commandName, true);
+                            }
+                        } catch (err) {
+                            console.error(`[Auto-Skill] ${commandName} execution failed:`, err);
+
+                            // PHASE 3: Report Failure
+                            if (agent.learned_skills) {
+                                agent.learned_skills.updateSkillPerformance(commandName, false);
+                            }
+                            throw err; // Keep throwing so the agent knows it failed
+                        }
+                    })
+                };
+
+                actionsList.push(newCommand);
+                addCommand(newCommand); // Registers the command dynamically into index.js
+                console.log(`[Auto-Load] Valid skill loaded: !${commandName}`);
             }
-
-            // 3. Load valid skill
-            actionsList.push({
-                name: `!${commandName}`,
-                description: validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`,
-                perform: runAsAction(async (agent) => {
-                    const src = fs.readFileSync(`${saveFolder}${file}`, 'utf8');
-                    const compartment = makeCompartment({
-                        skills: skills,
-                        log: skills.log,
-                        world: worldLib,
-                        Vec3
-                    });
-
-                    try {
-                        const mainFn = compartment.evaluate(src);
-                        await mainFn(agent.bot);
-
-                        // PHASE 3: Report Success
-                        if (agent.learned_skills) {
-                            agent.learned_skills.updateSkillPerformance(commandName, true);
-                        }
-                    } catch (err) {
-                        console.error(`[Auto-Skill] ${commandName} execution failed:`, err);
-
-                        // PHASE 3: Report Failure
-                        if (agent.learned_skills) {
-                            agent.learned_skills.updateSkillPerformance(commandName, false);
-                        }
-                        throw err; // Keep throwing so the agent knows it failed
-                    }
-                })
-            });
-            console.log(`[Auto-Load] Valid skill loaded: !${commandName}`);
         }
     }
 }

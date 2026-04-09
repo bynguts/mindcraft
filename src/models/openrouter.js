@@ -16,39 +16,53 @@ export class OpenRouter {
         }
 
         // Pass the API key to OpenAI compatible Api
-        config.apiKey = apiKey; 
+        config.apiKey = apiKey;
 
         this.openai = new OpenAIApi(config);
     }
 
-    async sendRequest(turns, systemMessage, stop_seq='*') {
+    // FIXED: Added Auto-Retry and Exponential Backoff for Rate Limits (HTTP 429)
+    async sendRequest(turns, systemMessage, stop_seq = '*') {
         let messages = [{ role: 'system', content: systemMessage }, ...turns];
         messages = strictFormat(messages);
 
-        // Choose a valid model from openrouter.ai (for example, "openai/gpt-4o")
         const pack = {
             model: this.model_name,
             messages,
             stop: stop_seq
         };
 
-        let res = null;
-        try {
-            console.log('Awaiting openrouter api response...');
-            let completion = await this.openai.chat.completions.create(pack);
-            if (!completion?.choices?.[0]) {
-                console.error('No completion or choices returned:', completion);
-                return 'No response received.';
+        let res = 'My brain disconnected, try again.';
+        const MAX_RETRIES = 3;
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                console.log(`[OpenRouter] Awaiting response (Attempt ${attempt}/${MAX_RETRIES})...`);
+                let completion = await this.openai.chat.completions.create(pack);
+
+                if (!completion?.choices?.[0]) {
+                    console.error('[OpenRouter] No completion or choices returned:', completion);
+                    return 'No response received.';
+                }
+                if (completion.choices[0].finish_reason === 'length') {
+                    throw new Error('Context length exceeded');
+                }
+
+                console.log('[OpenRouter] Received successfully.');
+                return completion.choices[0].message.content;
+
+            } catch (err) {
+                const isRateLimit = err.status === 429 || (err.message && err.message.includes('429'));
+                console.error(`[OpenRouter] Error on attempt ${attempt}:`, err.message || err);
+
+                if (isRateLimit && attempt < MAX_RETRIES) {
+                    const delay = attempt * 2000;
+                    console.warn(`[OpenRouter] Rate limited! Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+                break;
             }
-            if (completion.choices[0].finish_reason === 'length') {
-                throw new Error('Context length exceeded');
-            }
-            console.log('Received.');
-            res = completion.choices[0].message.content;
-        } catch (err) {
-            console.error('Error while awaiting response:', err);
-            // If the error indicates a context-length problem, we can slice the turns array, etc.
-            res = 'My brain disconnected, try again.';
         }
         return res;
     }
@@ -67,7 +81,7 @@ export class OpenRouter {
                 }
             ]
         });
-        
+
         return this.sendRequest(imageMessages, systemMessage);
     }
 

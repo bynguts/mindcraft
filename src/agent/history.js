@@ -21,7 +21,7 @@ export class History {
         this.max_messages = settings.max_messages;
 
         // Number of messages to remove from current history and save into memory
-        this.summary_chunk_size = 3;
+        this.summary_chunk_size = 10;
         // chunking reduces expensive calls to promptMemSaving and appendFullHistory
     }
 
