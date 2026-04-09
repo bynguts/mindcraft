@@ -294,8 +294,10 @@ class ItemWrapper {
 
 
 export class ItemGoal {
-    constructor(agent) {
+    // FIXED: Added 'data' parameter to properly receive and store NPC profile data
+    constructor(agent, data) {
         this.agent = agent;
+        this.data = data;
         this.goal = null;
         this.nodes = {};
         this.failed = [];

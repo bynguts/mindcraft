@@ -48,7 +48,6 @@ export function selectAPI(profile) {
         }
         else {
             // check for some common models that do not require prefixes
-            // ---> DI SINI KITA TAMBAHKAN 'llama' AGAR MASUK KE JALUR OPENAI <---
             if (profile.model.includes('gpt') || profile.model.includes('o1') || profile.model.includes('o3') || profile.model.includes('llama'))
                 profile.api = 'openai';
             else if (profile.model.includes('claude'))

@@ -1,15 +1,15 @@
-import { writeFile, readFile, mkdirSync } from 'fs';
+import { writeFile, readFile, mkdirSync, unlink, existsSync } from 'fs';
 import { makeCompartment, lockdown } from './library/lockdown.js';
 import * as skills from './library/skills.js';
 import * as world from './library/world.js';
 import { Vec3 } from 'vec3';
-import {ESLint} from "eslint";
+import { ESLint } from "eslint";
 
 export class Coder {
     constructor(agent) {
         this.agent = agent;
         this.file_counter = 0;
-        this.fp = '/bots/'+agent.name+'/action-code/';
+        this.fp = '/bots/' + agent.name + '/action-code/';
         this.code_template = '';
         this.code_lint_template = '';
 
@@ -28,15 +28,15 @@ export class Coder {
         this.agent.bot.modes.pause('unstuck');
         lockdown();
         // this message history is transient and only maintained in this function
-        let messages = agent_history.getHistory(); 
-        messages.push({role: 'system', content: 'Code generation started. Write code in codeblock in your response:'});
+        let messages = agent_history.getHistory();
+        messages.push({ role: 'system', content: 'Code generation started. Write code in codeblock in your response:' });
 
         const MAX_ATTEMPTS = 5;
         const MAX_NO_CODE = 3;
 
         let code = null;
         let no_code_failures = 0;
-        for (let i=0; i<MAX_ATTEMPTS; i++) {
+        for (let i = 0; i < MAX_ATTEMPTS; i++) {
             if (this.agent.bot.interrupt_code)
                 return null;
             const messages_copy = JSON.parse(JSON.stringify(messages));
@@ -47,31 +47,32 @@ export class Coder {
             if (!contains_code) {
                 if (res.indexOf('!newAction') !== -1) {
                     messages.push({
-                        role: 'assistant', 
+                        role: 'assistant',
                         content: res.substring(0, res.indexOf('!newAction'))
                     });
                     continue; // using newaction will continue the loop
                 }
-                
+
                 if (no_code_failures >= MAX_NO_CODE) {
                     console.warn("Action failed, agent would not write code.");
                     return 'Action failed, agent would not write code.';
                 }
                 messages.push({
-                    role: 'system', 
-                    content: 'Error: no code provided. Write code in codeblock in your response. ``` // example ```'}
+                    role: 'system',
+                    content: 'Error: no code provided. Write code in codeblock in your response. ``` // example ```'
+                }
                 );
                 console.warn("No code block generated. Trying again.");
                 no_code_failures++;
                 continue;
             }
-            code = res.substring(res.indexOf('```')+3, res.lastIndexOf('```'));
+            code = res.substring(res.indexOf('```') + 3, res.lastIndexOf('```'));
             const result = await this._stageCode(code);
             const executionModule = result.func;
             const lintResult = await this._lintCode(result.src_lint_copy);
             if (lintResult) {
-                const message = 'Error: Code lint error:'+'\n'+lintResult+'\nPlease try again.';
-                console.warn("Linting error:"+'\n'+lintResult+'\n');
+                const message = 'Error: Code lint error:' + '\n' + lintResult + '\nPlease try again.';
+                console.warn("Linting error:" + '\n' + lintResult + '\n');
                 messages.push({ role: 'system', content: message });
                 continue;
             }
@@ -90,7 +91,7 @@ export class Coder {
             } catch (e) {
                 if (this.agent.bot.interrupt_code)
                     return null;
-                
+
                 console.warn('Generated code threw error: ' + e.toString());
                 console.warn('trying again...');
 
@@ -108,8 +109,8 @@ export class Coder {
         }
         return `Code generation failed after ${MAX_ATTEMPTS} attempts.`;
     }
-    
-    async  _lintCode(code) {
+
+    async _lintCode(code) {
         let result = '#### CODE ERROR INFO ###\n';
         const codeNoComments = code.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
         const skillRegex = /((?:skills|world)\.(.*?))\(/g;
@@ -135,7 +136,7 @@ export class Coder {
 
         if (exceptions.length > 0) {
             exceptions.forEach((exc, index) => {
-                if (exc.line && exc.column ) {
+                if (exc.line && exc.column) {
                     const errorLine = codeLines[exc.line - 1]?.trim() || 'Unable to retrieve error line content';
                     result += `#ERROR ${index + 1}\n`;
                     result += `Message: ${exc.message}\n`;
@@ -148,7 +149,7 @@ export class Coder {
             return null;//no error
         }
 
-        return result ;
+        return result;
     }
     // write custom code to file and import it
     // write custom code to file and prepare for evaluation
@@ -169,15 +170,18 @@ export class Coder {
         src = this.code_template.replace('/* CODE HERE */', src);
 
         let filename = this.file_counter + '.js';
-        // if (this.file_counter > 0) {
-        //     let prev_filename = this.fp + (this.file_counter-1) + '.js';
-        //     unlink(prev_filename, (err) => {
-        //         console.log("deleted file " + prev_filename);
-        //         if (err) console.error(err);
-        //     });
-        // } commented for now, useful to keep files for debugging
         this.file_counter++;
-        
+
+        // FIXED: Hapus file lama biar hardisk nggak penuh
+        if (this.file_counter > 1) {
+            let prev_filename = '.' + this.fp + (this.file_counter - 2) + '.js';
+            if (existsSync(prev_filename)) {
+                unlink(prev_filename, (err) => {
+                    if (err) console.error(`[Coder] Gagal menghapus file lama:`, err);
+                });
+            }
+        }
+
         let write_result = await this._writeFilePromise('.' + this.fp + filename, src);
         // This is where we determine the environment the agent's code should be exposed to.
         // It will only have access to these things, (in addition to basic javascript objects like Array, Object, etc.)
@@ -189,12 +193,12 @@ export class Coder {
             Vec3,
         });
         const mainFn = compartment.evaluate(src);
-        
+
         if (write_result) {
             console.error('Error writing code execution file: ' + write_result);
             return null;
         }
-        return { func:{main: mainFn}, src_lint_copy: src_lint_copy };
+        return { func: { main: mainFn }, src_lint_copy: src_lint_copy };
     }
 
     _sanitizeCode(code) {

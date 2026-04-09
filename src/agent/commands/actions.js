@@ -630,15 +630,37 @@ export const actionsList = [
     },
 ];
 
+// FIXED: Strict synchronization between metadata.json and physical files
 const saveFolder = './bots/saved_skills/';
+const metadataPath = `${saveFolder}metadata.json`;
+let validSkills = {};
+
+// 1. Load the valid skills from metadata first
+if (fs.existsSync(metadataPath)) {
+    try {
+        validSkills = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    } catch (e) {
+        console.warn('[Auto-Skill] Could not read metadata.json, starting fresh.');
+    }
+}
+
 if (fs.existsSync(saveFolder)) {
     const files = fs.readdirSync(saveFolder);
     for (const file of files) {
         if (file.endsWith('.js')) {
             const commandName = file.replace('.js', '');
+
+            // 2. NEW: Zombie File Cleanup
+            if (!validSkills[commandName]) {
+                console.log(`[Auto-Skill] Deleting orphaned/outdated zombie skill: ${file}`);
+                fs.unlinkSync(`${saveFolder}${file}`);
+                continue;
+            }
+
+            // 3. Load valid skill
             actionsList.push({
                 name: `!${commandName}`,
-                description: `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`,
+                description: validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`,
                 perform: runAsAction(async (agent) => {
                     const src = fs.readFileSync(`${saveFolder}${file}`, 'utf8');
                     const compartment = makeCompartment({
@@ -667,7 +689,7 @@ if (fs.existsSync(saveFolder)) {
                     }
                 })
             });
-            console.log(`[Auto-Load] New skill loaded with performance tracking: !${commandName}`);
+            console.log(`[Auto-Load] Valid skill loaded: !${commandName}`);
         }
     }
 }

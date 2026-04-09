@@ -1,4 +1,4 @@
-import {Vec3} from 'vec3';
+import { Vec3 } from 'vec3';
 
 export class ConstructionTaskValidator {
     constructor(data, agent) {
@@ -20,7 +20,7 @@ export class ConstructionTaskValidator {
             score = (result.matches.length / total_blocks) * 100;
             console.log(`Task score: ${score}%`);
             return {
-                "valid": valid, 
+                "valid": valid,
                 "score": score
             };
         } catch (error) {
@@ -129,7 +129,7 @@ export class Blueprint {
         // explanation += `at coordinates X: ${levelData.coordinates[0]}, Y: ${levelData.coordinates[1]}, Z: ${levelData.coordinates[2]}`;
         explanation += " requires the following fixes:\n";
         for (let item of mismatches) {
-            if (item.actual === 'air') { 
+            if (item.actual === 'air') {
                 explanation += `Place ${item.expected} at coordinates X: ${item.coordinates[0]}, Y: ${item.coordinates[1]}, Z: ${item.coordinates[2]}\n`;
             } else if (item.expected === 'air') {
                 explanation += `Remove the ${item.actual} at coordinates X: ${item.coordinates[0]}, Y: ${item.coordinates[1]}, Z: ${item.coordinates[2]}\n`;
@@ -162,12 +162,12 @@ export class Blueprint {
         const placement = levelData.placement;
         const mismatches = [];
         const matches = [];
-    
+
         for (let zOffset = 0; zOffset < placement.length; zOffset++) {
             const row = placement[zOffset];
             for (let xOffset = 0; xOffset < row.length; xOffset++) {
                 const blockName = row[xOffset];
-    
+
                 const x = startCoords[0] + xOffset;
                 const y = startCoords[1];
                 const z = startCoords[2] + zOffset;
@@ -328,21 +328,21 @@ export class Blueprint {
  * @returns a blueprint object
  */
 export function proceduralGeneration(m = 20,
-                                     n = 20,
-                                     p = 20,
-                                     rooms = 8,
-                                     minRoomWidth = 5,
-                                     minRoomLength = 5,
-                                     minRoomDepth = 6,
-                                     roomVariance = 5,
-                                     wrapping = "air",
-                                     carpetStyle = 1,
-                                     windowStyle = 1,
-                                     complexity = 4,
-                                     startCoord = [148,-60,-170]) {
+    n = 20,
+    p = 20,
+    rooms = 8,
+    minRoomWidth = 5,
+    minRoomLength = 5,
+    minRoomDepth = 6,
+    roomVariance = 5,
+    wrapping = "air",
+    carpetStyle = 1,
+    windowStyle = 1,
+    complexity = 4,
+    startCoord = [148, -60, -170]) {
     // Build 3D space
-    const matrix = Array.from({length: p}, () =>
-        Array.from({length: m}, () =>
+    const matrix = Array.from({ length: p }, () =>
+        Array.from({ length: m }, () =>
             Array(n).fill('air')
         )
     );
@@ -389,11 +389,11 @@ export function proceduralGeneration(m = 20,
 
     // Direction probabilities (e.g., 'above': 40%, 'left': 15%, etc.)
     const directionChances = [
-        {direction: 'above', chance: 0.15},
-        {direction: 'left', chance: 0.15},
-        {direction: 'right', chance: 0.15},
-        {direction: 'forward', chance: 0.15},
-        {direction: 'backward', chance: 0.15},
+        { direction: 'above', chance: 0.15 },
+        { direction: 'left', chance: 0.15 },
+        { direction: 'right', chance: 0.15 },
+        { direction: 'forward', chance: 0.15 },
+        { direction: 'backward', chance: 0.15 },
     ];
 
     // Function to pick a random direction based on percentages
@@ -401,7 +401,7 @@ export function proceduralGeneration(m = 20,
         const rand = Math.random();
         let cumulative = 0;
 
-        for (const {direction, chance} of directionChances) {
+        for (const { direction, chance } of directionChances) {
             cumulative += chance;
             if (rand <= cumulative) return direction;
         }
@@ -781,7 +781,7 @@ export function proceduralGeneration(m = 20,
                 newZ = 0; // Ground floor
 
                 if (validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material)) {
-                    lastRoom = {x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth};
+                    lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
                     roomPlaced = true;
                     placedRooms++;
 
@@ -818,7 +818,7 @@ export function proceduralGeneration(m = 20,
                             addStairs(matrix, newX, newY, newZ, newLength, newWidth, material)
 
 
-                            lastRoom = {x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth};
+                            lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
                             roomPlaced = true;
                             placedRooms++;
                             break;
@@ -838,7 +838,7 @@ export function proceduralGeneration(m = 20,
                             addDoor(matrix, lastRoom.x, lastRoom.y + Math.floor(lastRoom.width / 2), lastRoom.z, material);
 
 
-                            lastRoom = {x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth};
+                            lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
                             roomPlaced = true;
                             placedRooms++;
                             break;
@@ -859,7 +859,7 @@ export function proceduralGeneration(m = 20,
                                 lastRoom.z, material);
 
 
-                            lastRoom = {x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth};
+                            lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
                             roomPlaced = true;
                             placedRooms++;
                             break;
@@ -880,7 +880,7 @@ export function proceduralGeneration(m = 20,
                                 lastRoom.z, material);
 
 
-                            lastRoom = {x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth};
+                            lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
                             roomPlaced = true;
                             placedRooms++;
                             break;
@@ -901,7 +901,7 @@ export function proceduralGeneration(m = 20,
                                 lastRoom.z, material);
 
 
-                            lastRoom = {x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth};
+                            lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
                             roomPlaced = true;
                             placedRooms++;
                             break;
@@ -1051,7 +1051,7 @@ export async function worldToBlueprint(startCoord, y_amount, x_amount, z_amount,
 export function blueprintToTask(blueprint_data, num_agents) {
     let initialInventory = {}
     for (let j = 0; j < num_agents; j++) {
-        initialInventory[JSON.stringify(j)] = {"diamond_pickaxe": 1, "diamond_axe": 1, "diamond_shovel": 1};
+        initialInventory[JSON.stringify(j)] = { "diamond_pickaxe": 1, "diamond_axe": 1, "diamond_shovel": 1 };
     }
 
     let give_agent = 0;
@@ -1071,34 +1071,3 @@ export function blueprintToTask(blueprint_data, num_agents) {
     };
     return task;
 }
-
-// testing code
-
-// let blueprint = proceduralGeneration(20,10,20)
-// const b = new Blueprint(blueprint)
-// const result = b.autoBuild();
-// const commands = result.commands;
-// const nearbyPosition = result.nearbyPosition;
-//
-//
-// import {initBot} from "../../utils/mcdata.js";
-// let bot = initBot("andy");
-
-
-// example usage of world->blueprint function
-
-// bot.once('spawn', async () => {
-//     console.log("nearby position", nearbyPosition);
-//     bot.chat(`/tp @andy ${nearbyPosition.x} ${nearbyPosition.y} ${nearbyPosition.z}`);
-//     for (const command of commands) {
-//         bot.chat(command);
-//     }
-//     const startCoord = {
-//         x: 148,
-//         y: -60,
-//         z: -170
-//     };
-//     // [148,-60,-170] is default start for procedural generation
-//
-//     const worldOutput = await worldToBlueprint(startCoord, 20,10,20, bot)
-// });
