@@ -1,3 +1,5 @@
+import assert from 'assert'; // FIXED: Adding missing assert import
+
 export class ActionManager {
     constructor(agent) {
         this.agent = agent;
@@ -34,7 +36,7 @@ export class ActionManager {
             await new Promise(resolve => setTimeout(resolve, 300));
         }
         clearTimeout(timeout);
-    } 
+    }
 
     cancelResume() {
         this.resume_func = null;
@@ -133,12 +135,13 @@ export class ActionManager {
             // Log the full stack trace
             console.error(err.stack);
             await this.stop();
-            err = err.toString();
+            const stackTrace = err.stack || 'No stack trace available.';
+            const errString = err.toString();
 
             let message = this.getBotOutputSummary() +
                 '!!Code threw exception!!\n' +
-                'Error: ' + err + '\n' +
-                'Stack trace:\n' + err.stack+'\n';
+                'Error: ' + errString + '\n' +
+                'Stack trace:\n' + stackTrace + '\n';
 
             let interrupted = this.agent.bot.interrupt_code;
             this.agent.clearBotLogs();

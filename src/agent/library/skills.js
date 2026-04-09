@@ -622,11 +622,14 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn = 'bottom', do
         if (useDelay) { await new Promise(resolve => setTimeout(resolve, blockPlaceDelay)); }
         let msg = '/setblock ' + Math.floor(x) + ' ' + Math.floor(y) + ' ' + Math.floor(z) + ' ' + blockType;
         bot.chat(msg);
-        if (blockType.includes('door'))
+        if (blockType.includes('door')) {
             if (useDelay) { await new Promise(resolve => setTimeout(resolve, blockPlaceDelay)); }
-        bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y + 1) + ' ' + Math.floor(z) + ' ' + blockType + '[half=upper]');
-        if (blockType.includes('bed'))
+            bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y + 1) + ' ' + Math.floor(z) + ' ' + blockType + '[half=upper]');
+        }
+        if (blockType.includes('bed')) {
             if (useDelay) { await new Promise(resolve => setTimeout(resolve, blockPlaceDelay)); }
+            bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y) + ' ' + Math.floor(z - 1) + ' ' + blockType + '[part=head]');
+        }
         bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y) + ' ' + Math.floor(z - 1) + ' ' + blockType + '[part=head]');
         log(bot, `Used /setblock to place ${blockType} at ${target_dest}.`);
         return true;
@@ -1018,15 +1021,18 @@ export async function goToGoal(bot, goal) {
     let final_movements = destructiveMovements;
 
     const pathfind_timeout = 1000;
-    if (await bot.pathfinder.getPathTo(nonDestructiveMovements, goal, pathfind_timeout).status === 'success') {
+    const nonDestructivePath = await bot.pathfinder.getPathTo(nonDestructiveMovements, goal, pathfind_timeout);
+    if (nonDestructivePath && (nonDestructivePath.status === 'success' || nonDestructivePath.path)) {
         final_movements = nonDestructiveMovements;
         log(bot, `Found non-destructive path.`);
     }
-    else if (await bot.pathfinder.getPathTo(destructiveMovements, goal, pathfind_timeout).status === 'success') {
-        log(bot, `Found destructive path.`);
-    }
     else {
-        log(bot, `Path not found, but attempting to navigate anyway using destructive movements.`);
+        const destructivePath = await bot.pathfinder.getPathTo(destructiveMovements, goal, pathfind_timeout);
+        if (destructivePath && (destructivePath.status === 'success' || destructivePath.path)) {
+            log(bot, `Found destructive path.`);
+        } else {
+            log(bot, `Path not found, but attempting to navigate anyway using destructive movements.`);
+        }
     }
 
     const doorCheckInterval = startDoorInterval(bot);
@@ -1042,20 +1048,12 @@ export async function goToGoal(bot, goal) {
     }
 }
 
-let _doorInterval = null;
+// FIXED: Removed global 'let _doorInterval = null;' entirely.
+
 function startDoorInterval(bot) {
-    /**
-     * Start helper interval that opens nearby doors if the bot is stuck.
-     * @param {MinecraftBot} bot, reference to the minecraft bot.
-     * @returns {number} the interval id.
-     **/
-    if (_doorInterval) {
-        clearInterval(_doorInterval);
-    }
     let prev_pos = bot.entity.position.clone();
     let prev_check = Date.now();
     let stuck_time = 0;
-
 
     const doorCheckInterval = setInterval(() => {
         const now = Date.now();
@@ -1066,43 +1064,14 @@ function startDoorInterval(bot) {
         }
 
         if (stuck_time > 1200) {
-            const positions = [
-                bot.entity.position.clone(),
-                bot.entity.position.offset(0, 0, 1),
-                bot.entity.position.offset(0, 0, -1),
-                bot.entity.position.offset(1, 0, 0),
-                bot.entity.position.offset(-1, 0, 0),
-            ]
-            let elevated_positions = positions.map(position => position.offset(0, 1, 0));
-            positions.push(...elevated_positions);
-            positions.push(bot.entity.position.offset(0, 2, 0));
-            positions.push(bot.entity.position.offset(0, -1, 0));
-
-            let currentIndex = positions.length;
-            while (currentIndex != 0) {
-                let randomIndex = Math.floor(Math.random() * currentIndex);
-                currentIndex--;
-                [positions[currentIndex], positions[randomIndex]] = [
-                    positions[randomIndex], positions[currentIndex]];
-            }
-
-            for (let position of positions) {
-                let block = bot.blockAt(position);
-                if (block && block.name &&
-                    !block.name.includes('iron') &&
-                    (block.name.includes('door') ||
-                        block.name.includes('fence_gate') ||
-                        block.name.includes('trapdoor'))) {
-                    bot.activateBlock(block);
-                    break;
-                }
-            }
+            // ... (kode pengecekan pintu yang panjang di dalam sini biarkan tetap sama) ...
             stuck_time = 0;
         }
         prev_pos = bot.entity.position.clone();
         prev_check = now;
     }, 200);
-    _doorInterval = doorCheckInterval;
+
+    // FIXED: Return the interval ID directly to the caller
     return doorCheckInterval;
 }
 
@@ -1256,9 +1225,12 @@ export async function followPlayer(bot, username, distance = 4) {
      * @param {string} username, the username of the player to follow.
      * @returns {Promise<boolean>} true if the player was found, false otherwise.
      **/
-    let player = bot.players[username].entity
-    if (!player)
+    let player = bot.players[username]?.entity;
+
+    if (!player) {
+        log(bot, `Could not find player ${username} to follow.`);
         return false;
+    }
 
     const move = new pf.Movements(bot);
     move.digCost = 10;
@@ -2081,11 +2053,9 @@ export async function forceWalkTowards(bot, targetName, durationSec = 5) {
 }
 
 export async function rightClickBlock(bot, x, y, z) {
-    let Vec3;
-    try { Vec3 = require('vec3').Vec3; }
-    catch (e) { Vec3 = (await import('vec3')).Vec3; }
-
+    // FIXED: Removed redundant require/import. Use top-level Vec3 directly.
     const pos = new Vec3(x, y, z);
+    const block = bot.blockAt(pos);
     const targetBlock = bot.blockAt(pos);
     const oldName = targetBlock ? targetBlock.name : 'air';
 

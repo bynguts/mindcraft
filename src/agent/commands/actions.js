@@ -7,25 +7,6 @@ import * as worldLib from '../library/world.js';
 import { Vec3 } from 'vec3';
 import { addCommand } from './index.js';
 
-let questCache = null;
-const questMemoryFile = './bots/quest_memory.json';
-
-function getQuests() {
-    if (questCache !== null) return questCache;
-    if (fs.existsSync(questMemoryFile)) {
-        try { questCache = JSON.parse(fs.readFileSync(questMemoryFile, 'utf8')); }
-        catch (e) { questCache = []; }
-    } else {
-        questCache = [];
-    }
-    return questCache;
-}
-
-function saveQuests(quests) {
-    questCache = quests;
-    fs.writeFileSync(questMemoryFile, JSON.stringify(quests, null, 2));
-}
-
 function runAsAction(actionFn, resume = false, timeout = -1) {
     let actionLabel = null;
 
@@ -646,61 +627,6 @@ export const actionsList = [
         perform: runAsAction(async (agent, entity_name) => {
             await skills.saddleEntity(agent.bot, entity_name);
         })
-    },
-    {
-        name: '!addQuest',
-        description: 'Record a new task in memory.',
-        params: {
-            'quest_text': { type: 'string', description: 'Task or quest details (e.g.: Collect 64 iron ingots)' }
-        },
-        perform: async function (agent, quest_text) {
-            let quests = getQuests();
-            quests.push({ task: quest_text, status: 'pending', date: new Date().toLocaleDateString() });
-            saveQuests(quests);
-            return `Task "${quest_text}" has been successfully recorded in the quest log.`;
-        }
-    },
-    {
-        name: '!checkQuest',
-        description: 'View all pending tasks.',
-        params: {},
-        perform: async function (agent) {
-            let quests = getQuests();
-            let pendingQuests = quests.filter(q => q.status === 'pending');
-
-            if (pendingQuests.length === 0) return "All quests have been completed. There are no pending tasks.";
-
-            let reply = "Pending Quests:\n";
-            pendingQuests.forEach((q, i) => {
-                reply += `${i + 1}. ${q.task} (Added: ${q.date})\n`;
-            });
-            return reply;
-        }
-    },
-    {
-        name: '!finishQuest',
-        description: 'Mark task as completed by sequence number.',
-        params: {
-            'quest_number': { type: 'int', description: 'The number of the completed quest (e.g.: 1)' }
-        },
-        perform: async function (agent, quest_number) {
-            let quests = getQuests();
-            let pendingQuests = quests.filter(q => q.status === 'pending');
-
-            if (quest_number < 1 || quest_number > pendingQuests.length) {
-                return `Invalid quest number. Please check the active quests list.`;
-            }
-
-            let taskToFinish = pendingQuests[quest_number - 1].task;
-            let realIndex = quests.findIndex(q => q.task === taskToFinish && q.status === 'pending');
-
-            if (realIndex !== -1) {
-                quests[realIndex].status = 'completed';
-                saveQuests(quests);
-                return `Quest "${taskToFinish}" has been marked as completed. Great job!`;
-            }
-            return "Failed to update the quest status.";
-        }
     },
 ];
 
