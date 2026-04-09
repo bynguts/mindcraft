@@ -83,12 +83,9 @@ export class Prompter {
                 embedding_model_profile = null;
             }
         }
-        if (embedding_model_profile) {
-            this.embedding_model = createModel(embedding_model_profile);
-        }
-        else {
-            this.embedding_model = createModel({ api: chat_model_profile.api });
-        }
+        this.embedding_model = embedding_model_profile
+            ? createModel(embedding_model_profile)
+            : null;
 
         this.skill_libary = new SkillLibrary(agent, this.embedding_model);
         mkdirSync(`./bots/${name}`, { recursive: true });

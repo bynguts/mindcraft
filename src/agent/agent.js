@@ -149,6 +149,21 @@ export class Agent {
         });
     }
 
+    // FIXED: Extracted DiscordSRV parsing logic into a unified helper (DRY Principle)
+    _parseDiscordMessage(message, defaultUsername = "") {
+        let finalUsername = defaultUsername;
+        let finalMessage = message;
+
+        if (message.includes('»')) {
+            const parts = message.split('»');
+            const namePart = parts[0].split(']').pop();
+            finalUsername = namePart.trim() || defaultUsername;
+            finalMessage = parts[1].trim();
+        }
+
+        return { finalUsername, finalMessage };
+    }
+
     async _setupEventHandlers(save_data, init_message) {
         const ignore_messages = [
             "Set own game mode to",
@@ -175,15 +190,8 @@ export class Agent {
             this.lastMessageTime = currentTime;
 
             // --- DISCORD CLEANER OPERATION ---
-            let finalUsername = username;
-            let finalMessage = message;
-
-            if (message.includes('»')) {
-                const splitMsg = message.split('»');
-                let rawName = splitMsg[0].trim();
-                finalMessage = splitMsg[1].trim();
-                finalUsername = rawName.replace('[Discord]', '').trim();
-            }
+            // Use the DRY helper method
+            const { finalUsername, finalMessage } = this._parseDiscordMessage(message, username);
 
             // Convert both the bot's name and the incoming message to lowercase
             const lowerName = this.name.toLowerCase();
@@ -532,18 +540,10 @@ export class Agent {
                 this.handleMessage('system', `You died at position ${death_pos_text || "unknown"} in the ${dimention} dimension with the final message: '${message}'. Your place of death is saved as 'last_death_position' if you want to return. Previous actions were stopped and you have respawned.`);
             }
 
-            // --- 2. SPECIAL DISCORDSRV ROUTE (MISSING) ---
             // --- 2. SPECIAL DISCORDSRV ROUTE (FAIL-SAFE VERSION) ---
             if (message.includes('[Discord') && message.includes('»')) {
-                // Split based on symbol »
-                const parts = message.split('»');
-
-                // parts[0] contains: "[Discord | admin jir] by2n"
-                // Split again based on ']', then take the last part (username)
-                const namePart = parts[0].split(']').pop();
-
-                const finalUsername = namePart.trim(); // Clean result: "by2n"
-                const finalMessage = parts[1].trim(); // Clean result: "Huu"
+                // Rely on the unified helper
+                const { finalUsername, finalMessage } = this._parseDiscordMessage(message);
 
                 // Throw to respondFunc!
                 if (this.respondFunc) {
