@@ -54,7 +54,22 @@ export const actionsList = [
                         let saveFolder = './bots/saved_skills/';
 
                         if (!fs.existsSync(saveFolder)) fs.mkdirSync(saveFolder, { recursive: true });
-                        fs.copyFileSync(lastFile, `${saveFolder}${cleanName}.js`);
+                        // FIXED: Automated Versioning System
+                        // If the skill already exists, move the old version to a /history subfolder before overwriting.
+                        const historyFolder = path.join(saveFolder, 'history');
+                        const targetFile = path.join(saveFolder, `${cleanName}.js`);
+
+                        if (fs.existsSync(targetFile)) {
+                            if (!fs.existsSync(historyFolder)) fs.mkdirSync(historyFolder, { recursive: true });
+
+                            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                            const backupPath = path.join(historyFolder, `${cleanName}_${timestamp}.js.bak`);
+
+                            fs.renameSync(targetFile, backupPath); // Safely move old version to history
+                            console.log(`[Versioning] Backed up old version of ${cleanName} to history.`);
+                        }
+
+                        fs.copyFileSync(lastFile, targetFile); // Save the new version
 
                         if (agent.learned_skills) {
                             agent.learned_skills.registerSkill(cleanName, prompt, ["auto-generated", "action"]);
