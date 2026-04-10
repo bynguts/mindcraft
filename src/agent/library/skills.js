@@ -626,11 +626,17 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn = 'bottom', do
             if (useDelay) { await new Promise(resolve => setTimeout(resolve, blockPlaceDelay)); }
             bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y + 1) + ' ' + Math.floor(z) + ' ' + blockType + '[half=upper]');
         }
+        if (blockType.includes('door')) {
+            if (useDelay) { await new Promise(resolve => setTimeout(resolve, blockPlaceDelay)); }
+            bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y + 1) + ' ' + Math.floor(z) + ' ' + blockType + '[half=upper]');
+        }
         if (blockType.includes('bed')) {
             if (useDelay) { await new Promise(resolve => setTimeout(resolve, blockPlaceDelay)); }
+            // FIXED: Removed the duplicated, out-of-scope bed placement command 
+            // that was causing syntax errors for all non-bed blocks in cheat mode.
             bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y) + ' ' + Math.floor(z - 1) + ' ' + blockType + '[part=head]');
         }
-        bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y) + ' ' + Math.floor(z - 1) + ' ' + blockType + '[part=head]');
+
         log(bot, `Used /setblock to place ${blockType} at ${target_dest}.`);
         return true;
     }
