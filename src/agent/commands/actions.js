@@ -6,6 +6,7 @@ import { makeCompartment } from '../library/lockdown.js';
 import * as worldLib from '../library/world.js';
 import { Vec3 } from 'vec3';
 import { addCommand } from './index.js';
+import path from 'path';
 
 function runAsAction(actionFn, resume = false, timeout = -1) {
     let actionLabel = null;
@@ -356,10 +357,9 @@ export const actionsList = [
         },
         perform: runAsAction(async (agent, item_name, num) => {
             let success = await skills.smeltItem(agent.bot, item_name, num);
+            // FIXED: Removed agent.cleanKill() to prevent infinite loop on load_memory: true
             if (success) {
-                setTimeout(() => {
-                    agent.cleanKill('Safely restarting to update inventory.');
-                }, 500);
+                skills.log(agent.bot, 'Smelting complete. Inventory will update naturally.');
             }
         })
     },

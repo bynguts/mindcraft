@@ -247,7 +247,14 @@ export class Task {
             this.taskStartTime = Date.now();
         this.validator = null;
         this.reset_function = null;
-        this.blocked_actions = [];
+        this.blocked_actions = [
+            "!checkBlueprint",
+            "!checkBlueprintLevel",
+            "!getBlueprint",
+            "!getBlueprintLevel",
+            "!setQuest",
+            "!nextSubtask"
+        ];
         this.task_data = task_data;
         if (task_data) {
             console.log('Starting task', task_data.task_id);

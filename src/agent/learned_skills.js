@@ -7,7 +7,9 @@ export class LearnedSkills {
         // Use standard paths consistent with the project structure
         this.dirPath = path.join(process.cwd(), 'bots', 'saved_skills');
         this.metadataPath = path.join(this.dirPath, 'metadata.json');
+        this.vectorCachePath = path.join(this.dirPath, 'vector_cache.json'); // NEW: Dedicated vector storage
         this.metadata = {};
+        this.vectorCache = {};
 
         this.init();
     }
@@ -36,13 +38,10 @@ export class LearnedSkills {
 
     // FIXED: Synchronize state before modifying to prevent race conditions across agents
     reload() {
-        if (fs.existsSync(this.metadataPath)) {
-            const rawData = fs.readFileSync(this.metadataPath, 'utf8');
+        if (fs.existsSync(this.vectorCachePath)) {
             try {
-                this.metadata = JSON.parse(rawData);
-            } catch (error) {
-                console.error('[LearnedSkills] Error parsing metadata.json during reload. Keeping cached state.');
-            }
+                this.vectorCache = JSON.parse(fs.readFileSync(this.vectorCachePath, 'utf8'));
+            } catch (e) { }
         }
     }
 
@@ -59,6 +58,14 @@ export class LearnedSkills {
             fs.renameSync(tmpPath, this.metadataPath);
         } catch (err) {
             console.error('[LearnedSkills] Failed to save metadata atomically:', err);
+        }
+
+        const tmpVector = `${this.vectorCachePath}.tmp`;
+        try {
+            fs.writeFileSync(tmpVector, JSON.stringify(this.vectorCache));
+            fs.renameSync(tmpVector, this.vectorCachePath);
+        } catch (err) {
+            console.error('[LearnedSkills] Failed to save vector cache:', err);
         }
     }
 

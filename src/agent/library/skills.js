@@ -1073,7 +1073,16 @@ function startDoorInterval(bot) {
         }
 
         if (stuck_time > 1200) {
-            // ... (kode pengecekan pintu yang panjang di dalam sini biarkan tetap sama) ...
+            // FIXED: Restored actual block checking logic for doors
+            const doorBlocks = ['oak_door', 'spruce_door', 'birch_door', 'jungle_door', 'acacia_door', 'dark_oak_door', 'mangrove_door', 'cherry_door', 'bamboo_door', 'crimson_door', 'warped_door'];
+            for (let d of doorBlocks) {
+                if (!bot.registry.blocksByName[d]) continue;
+                let doorBlock = bot.findBlock({ matching: bot.registry.blocksByName[d].id, maxDistance: 2 });
+                if (doorBlock && !doorBlock._properties.open) {
+                    bot.activateBlock(doorBlock);
+                    break;
+                }
+            }
             stuck_time = 0;
         }
         prev_pos = bot.entity.position.clone();

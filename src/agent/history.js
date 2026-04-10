@@ -106,6 +106,7 @@ export class History {
     async save() {
         try {
             const data = {
+                name: this.agent.name,
                 memory: this.memory,
                 turns: this.turns,
                 self_prompting_state: this.agent.self_prompter.state,
