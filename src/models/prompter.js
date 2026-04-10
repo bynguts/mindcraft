@@ -158,7 +158,11 @@ export class Prompter {
             }
 
             if (this.agent.memory_bank) {
-                docs += this.agent.memory_bank.getQuestBoard();
+                // FIXED: Only invoke getQuestBoard() and perform string concatenation if there are active quests. (Micro-Optimization)
+                const quests = this.agent.memory_bank.quests;
+                if (quests && Object.keys(quests).length > 0) {
+                    docs += this.agent.memory_bank.getQuestBoard();
+                }
             }
 
             prompt = prompt.replaceAll('$COMMAND_DOCS', docs);
