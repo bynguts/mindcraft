@@ -78,30 +78,27 @@ class ConversationManager {
             if (this.awaiting_response && agent.isIdle()) {
                 wait_time += delta;
                 if (wait_time > this.wait_time_limit) {
-                    agent.handleMessage('system', `${convo_partner} hasn't responded in ${this.wait_time_limit/1000} seconds, respond with a message to them or your own action.`);
+                    agent.handleMessage('system', `${convo_partner} hasn't responded in ${this.wait_time_limit / 1000} seconds, respond with a message to them or your own action.`);
                     wait_time = 0;
-                    this.wait_time_limit*=2;
+                    this.wait_time_limit *= 2;
                 }
             }
-            else if (!this.awaiting_response){
+            else if (!this.awaiting_response) {
                 this.wait_time_limit = WAIT_TIME_START;
                 wait_time = 0;
             }
 
-            if (!this.otherAgentInGame(convo_partner) && !this.connection_timeout) {
-                this.connection_timeout = setTimeout(() => {
-                    if (this.otherAgentInGame(convo_partner)){
-                        this._clearMonitorTimeouts();
-                        return;
-                    }
-                    if (!agent.self_prompter.isPaused()) {
-                        this.endConversation(convo_partner);
-                        agent.handleMessage('system', `${convo_partner} disconnected, conversation has ended.`);
-                    }
-                    else {
-                        this.endConversation(convo_partner);
-                    }
-                }, 10000);
+            // FIXED: Fail-fast jika agen lain terdeteksi mati oleh Mindserver (Bug #34)
+            if (!this.otherAgentInGame(convo_partner)) {
+                this._clearMonitorTimeouts();
+                if (!agent.self_prompter.isPaused()) {
+                    this.endConversation(convo_partner);
+                    agent.handleMessage('system', `${convo_partner} crashed or disconnected. Conversation has ended automatically.`);
+                }
+                else {
+                    this.endConversation(convo_partner);
+                }
+                return;
             }
         }, 1000);
     }
@@ -121,7 +118,7 @@ class ConversationManager {
     async startConversation(send_to, message) {
         const convo = this._getConvo(send_to);
         convo.reset();
-        
+
         if (agent.self_prompter.isActive()) {
             await agent.self_prompter.pause();
         }
@@ -140,20 +137,27 @@ class ConversationManager {
         this._startMonitor();
     }
 
-    sendToBot(send_to, message, start=false, open_chat=true) {
+    sendToBot(send_to, message, start = false, open_chat = true) {
         if (!this.isOtherAgent(send_to)) {
             console.warn(`${agent.name} tried to send bot message to non-bot ${send_to}`);
             return;
         }
+
+        if (!this.otherAgentInGame(send_to)) {
+            agent.handleMessage('system', `Cannot send message. ${send_to} is currently crashed or offline.`);
+            this.endConversation(send_to);
+            return;
+        }
+
         const convo = this._getConvo(send_to);
-        
+
         if (settings.chat_bot_messages && open_chat)
             agent.openChat(`(To ${send_to}) ${message}`);
-        
+
         if (convo.ignore_until_start)
             return;
         convo.active = true;
-        
+
         const end = message.includes('!endConversation');
         const json = {
             'message': message,
@@ -185,12 +189,12 @@ class ConversationManager {
 
         this._clearMonitorTimeouts();
         convo.queue(received);
-        
+
         // responding to conversation takes priority over self prompting
-        if (agent.self_prompter.isActive()){
+        if (agent.self_prompter.isActive()) {
             await agent.self_prompter.pause();
         }
-    
+
         _scheduleProcessInMessage(sender, received, convo);
     }
 
@@ -208,7 +212,7 @@ class ConversationManager {
     otherAgentInGame(name) {
         return agents_in_game.some((n) => n === name);
     }
-    
+
     updateAgents(agents) {
         agent_names = agents.map(a => a.name);
         agents_in_game = agents.filter(a => a.in_game).map(a => a.name);
@@ -217,13 +221,13 @@ class ConversationManager {
     getInGameAgents() {
         return agents_in_game;
     }
-    
-    inConversation(other_agent=null) {
+
+    inConversation(other_agent = null) {
         if (other_agent)
             return this.convos[other_agent]?.active;
         return Object.values(this.convos).some(c => c.active);
     }
-    
+
     endConversation(sender) {
         if (this.convos[sender]) {
             this.convos[sender].end();
@@ -236,7 +240,7 @@ class ConversationManager {
             }
         }
     }
-    
+
     endAllConversations() {
         for (const sender in this.convos) {
             this.endConversation(sender);
@@ -295,7 +299,7 @@ async function _scheduleProcessInMessage(sender, received, convo) {
         }
         else {
             let shouldRespond = await agent.prompter.promptShouldRespondToBot(received.message);
-            console.log(`${agent.name} decided to ${shouldRespond?'respond':'not respond'} to ${sender}`);
+            console.log(`${agent.name} decided to ${shouldRespond ? 'respond' : 'not respond'} to ${sender}`);
             if (shouldRespond)
                 scheduleResponse(fastDelay);
         }
@@ -324,7 +328,7 @@ function _compileInMessages(convo) {
 
 function _handleFullInMessage(sender, received) {
     console.log(`${agent.name} responding to "${received.message}" from ${sender}`);
-    
+
     const convo = convoManager._getConvo(sender);
     convo.active = true;
 

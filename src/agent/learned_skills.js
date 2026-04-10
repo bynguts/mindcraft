@@ -63,13 +63,14 @@ export class LearnedSkills {
     }
 
     // Register a new skill with explicit success/fail tracking
-    registerSkill(skillName, description, tags = []) {
+    registerSkill(skillName, description, tags = [], dependencies = []) {
         this.reload(); // Sync with other agents before writing
 
         if (!this.metadata[skillName]) {
             this.metadata[skillName] = {
                 description: description,
                 tags: tags,
+                dependencies: dependencies, // Simpan ke metadata
                 success_count: 0,
                 fail_count: 0,
                 learned_at: new Date().toISOString()
@@ -77,6 +78,10 @@ export class LearnedSkills {
         } else {
             this.metadata[skillName].description = description;
             this.metadata[skillName].tags = tags;
+            // Update dependencies jika ada nilai baru yang lebih relevan
+            if (dependencies && dependencies.length > 0) {
+                this.metadata[skillName].dependencies = dependencies;
+            }
         }
         this.save();
         console.log(`[LearnedSkills] Registered skill: ${skillName}`);
@@ -117,33 +122,87 @@ export class LearnedSkills {
         this.save();
     }
 
-    searchRelevantSkills(query) {
+    // FIXED: Helper untuk menghitung jarak vektor (Semantic Similarity)
+    cosineSimilarity(vecA, vecB) {
+        let dotProduct = 0, normA = 0, normB = 0;
+        for (let i = 0; i < vecA.length; i++) {
+            dotProduct += vecA[i] * vecB[i];
+            normA += vecA[i] * vecA[i];
+            normB += vecB[i] * vecB[i];
+        }
+        if (normA === 0 || normB === 0) return 0;
+        return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+
+    // FIXED: Upgrade dari Lexical Substring ke Semantic Vector Search (Bug #37)
+    async searchRelevantSkills(query) {
         const lowerQuery = query.toLowerCase();
         let results = [];
+        let queryEmbedding = null;
+
+        // 1. Ambil vektor dari user query
+        if (this.agent.prompter && this.agent.prompter.embedding_model) {
+            try {
+                queryEmbedding = await this.agent.prompter.embedding_model.embed(query);
+            } catch (e) {
+                console.warn('[LearnedSkills] API Embedding failed, falling back to pure substring match.');
+            }
+        }
+
+        let metadataChanged = false;
 
         for (const [skillName, data] of Object.entries(this.metadata)) {
+            let score = 0;
+
+            // 2. Semantic Search Logic
+            if (queryEmbedding) {
+                // Cache skill embedding biar ngga boros API calls
+                if (!data.embedding) {
+                    const textToEmbed = `${skillName} ${data.description} ${data.tags.join(' ')}`;
+                    try {
+                        data.embedding = await this.agent.prompter.embedding_model.embed(textToEmbed);
+                        metadataChanged = true;
+                    } catch (e) { }
+                }
+
+                if (data.embedding) {
+                    score = this.cosineSimilarity(queryEmbedding, data.embedding);
+                }
+            }
+
+            // 3. Fallback / Hybrid Boost (Lexical Match)
             const matchTag = data.tags.some(tag => tag.toLowerCase().includes(lowerQuery));
             const matchDesc = data.description.toLowerCase().includes(lowerQuery);
             const matchName = skillName.toLowerCase().includes(lowerQuery);
 
             if (matchTag || matchDesc || matchName) {
+                score += 0.3; // Boost skor kalau string-nya cocok persis
+            }
+
+            // 4. Threshold Filter
+            if (score > 0.75 || matchTag || matchDesc || matchName) {
                 const total = data.success_count + data.fail_count;
                 const rate = total > 0 ? (data.success_count / total) : 1.0;
-                results.push({ name: skillName, ...data, rate, total });
+                results.push({ name: skillName, ...data, rate, total, score });
             }
         }
 
-        results.sort((a, b) => b.rate - a.rate || b.total - a.total);
-        return results;
+        if (metadataChanged) this.save();
+
+        // 5. Urutkan berdasarkan Skor Semantik tertinggi
+        results.sort((a, b) => b.score - a.score || b.rate - a.rate || b.total - a.total);
+        return results.slice(0, 5); // Batasi top 5 skills biar konteks LLM nggak kepenuhan
     }
 
-    getFormattedSkills(query) {
-        const skills = this.searchRelevantSkills(query);
+    // FIXED: Ubah menjadi Async karena pencarian vektor butuh waktu (Bug #37)
+    async getFormattedSkills(query) {
+        const skills = await this.searchRelevantSkills(query);
         if (skills.length === 0) return "No relevant saved skills found.";
 
         let output = `Relevant saved skills for '${query}':\n`;
         skills.forEach(s => {
-            output += `- ${s.name}: ${s.description} (Success: ${(s.rate * 100).toFixed(0)}%, Uses: ${s.total})\n`;
+            const deps = s.dependencies && s.dependencies.length > 0 ? ` [Requires: ${s.dependencies.join(', ')}]` : '';
+            output += `- ${s.name}: ${s.description}${deps} (Success: ${(s.rate * 100).toFixed(0)}%, Uses: ${s.total})\n`;
         });
         return output;
     }

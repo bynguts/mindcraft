@@ -60,6 +60,13 @@ export class Agent {
         if (load_mem) {
             save_data = this.history.load();
         }
+
+        // FIXED: Restore quest board state from persistent memory (Bug #39)
+        if (save_data && save_data.quests) {
+            this.memory_bank.quests = save_data.quests;
+            console.log(`[Memory] Restored ${Object.keys(save_data.quests).length} active quests.`);
+        }
+
         let taskStart = null;
         if (save_data) {
             taskStart = save_data.taskStart;
@@ -126,6 +133,13 @@ export class Agent {
 
                 console.log(`${this.name} spawned.`);
                 this.clearBotLogs();
+
+                // FIXED: Kirim heartbeat ke Mindserver (Bug #34)
+                this.heartbeatInterval = setInterval(() => {
+                    if (serverProxy.getSocket()) {
+                        serverProxy.getSocket().emit('agent-heartbeat', this.name);
+                    }
+                }, 5000);
 
                 this._setupEventHandlers(save_data, init_message);
                 this.startEvents();
@@ -599,6 +613,7 @@ export class Agent {
 
 
     cleanKill(msg = 'Killing agent process...', code = 1) {
+        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval); // FIXED: Cleanup heartbeat
         this.history.add('system', msg);
         this.bot.chat(code > 1 ? 'Restarting.' : 'Exiting.');
         this.history.save();

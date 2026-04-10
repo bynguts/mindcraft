@@ -151,7 +151,8 @@ export class Prompter {
 
             const last_user_msg = messages.slice().reverse().find(msg => msg.role !== 'system')?.content || '';
             if (this.agent.learned_skills && last_user_msg) {
-                let relevant_skills = this.agent.learned_skills.getFormattedSkills(last_user_msg);
+                // FIXED: Await the new async semantic vector search for learned skills (Bug #37)
+                let relevant_skills = await this.agent.learned_skills.getFormattedSkills(last_user_msg);
                 if (!relevant_skills.includes("No relevant")) {
                     docs += "\n\n" + relevant_skills;
                 }
@@ -218,17 +219,13 @@ export class Prompter {
     }
 
     async checkCooldown() {
-        // FIXED: Robust throttle implementation. 
-        // Ensures a minimum delay between ANY two API requests to prevent rate-limit crashes.
         const currentTime = Date.now();
         const elapsed = currentTime - this.last_prompt_time;
-
-        // Use profile cooldown or default to 2000ms for safety on free tiers
-        const minWait = this.cooldown > 0 ? this.cooldown : 2000;
+        const minWait = this.cooldown > 0 ? this.cooldown : 2000; // 2s safety floor
 
         if (elapsed < minWait) {
             const sleepTime = minWait - elapsed;
-            console.log(`[Prompter] Throttling request: Waiting ${sleepTime}ms to respect API rate limits...`);
+            console.log(`[Prompter] Throttling request: Waiting ${sleepTime}ms...`);
             await new Promise(r => setTimeout(r, sleepTime));
         }
         this.last_prompt_time = Date.now();

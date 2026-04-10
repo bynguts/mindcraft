@@ -33,9 +33,11 @@ export const actionsList = [
         name: '!newAction',
         description: 'Perform custom behaviors not available as a command.',
         params: {
-            'prompt': { type: 'string', description: 'A natural language prompt to guide code generation. Make a detailed step-by-step plan.' }
+            'prompt': { type: 'string', description: 'A natural language prompt to guide code generation. Make a detailed step-by-step plan.' },
+            // FIXED: Tambahkan parameter dependencies agar LLM bisa mendefinisikannya (Bug #36)
+            'dependencies': { type: 'string', description: 'Optional comma-separated list of items/skills required to execute this action (e.g. "oak_log, crafting_table"). Leave empty if none.' }
         },
-        perform: async function (agent, prompt) {
+        perform: async function (agent, prompt, dependencies = "") {
             if (!settings.allow_insecure_coding) {
                 agent.openChat('newAction is disabled.');
                 return "newAction not allowed! Code writing is disabled.";
@@ -54,8 +56,7 @@ export const actionsList = [
                         let saveFolder = './bots/saved_skills/';
 
                         if (!fs.existsSync(saveFolder)) fs.mkdirSync(saveFolder, { recursive: true });
-                        // FIXED: Automated Versioning System
-                        // If the skill already exists, move the old version to a /history subfolder before overwriting.
+
                         const historyFolder = path.join(saveFolder, 'history');
                         const targetFile = path.join(saveFolder, `${cleanName}.js`);
 
@@ -65,14 +66,17 @@ export const actionsList = [
                             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
                             const backupPath = path.join(historyFolder, `${cleanName}_${timestamp}.js.bak`);
 
-                            fs.renameSync(targetFile, backupPath); // Safely move old version to history
+                            fs.renameSync(targetFile, backupPath);
                             console.log(`[Versioning] Backed up old version of ${cleanName} to history.`);
                         }
 
-                        fs.copyFileSync(lastFile, targetFile); // Save the new version
+                        fs.copyFileSync(lastFile, targetFile);
+
+                        // FIXED: Parse dependencies dan daftarkan ke metadata (Bug #36)
+                        let depsArray = typeof dependencies === 'string' && dependencies.trim() !== '' ? dependencies.split(',').map(d => d.trim()) : [];
 
                         if (agent.learned_skills) {
-                            agent.learned_skills.registerSkill(cleanName, prompt, ["auto-generated", "action"]);
+                            agent.learned_skills.registerSkill(cleanName, prompt, ["auto-generated", "action"], depsArray);
                         }
                         const newCommand = {
                             name: `!${cleanName}`,
@@ -678,9 +682,13 @@ export function loadSavedSkills() {
                     actionsList.splice(existingIndex, 1);
                 }
 
+                // FIXED: Suntikkan dependencies ke dalam description command agar agen tahu syaratnya (Bug #36)
+                const deps = validSkills[commandName].dependencies;
+                const depsText = deps && deps.length > 0 ? ` [Requires: ${deps.join(', ')}]` : '';
+
                 const newCommand = {
                     name: `!${commandName}`,
-                    description: validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`,
+                    description: (validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`) + depsText,
                     perform: runAsAction(async (agent) => {
                         const src = fs.readFileSync(`${saveFolder}${file}`, 'utf8');
                         const compartment = makeCompartment({

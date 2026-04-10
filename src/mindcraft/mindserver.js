@@ -26,6 +26,7 @@ class AgentConnection {
         this.in_game = false;
         this.full_state = null;
         this.viewer_port = viewer_port;
+        this.last_heartbeat = Date.now(); // FIXED: Track heartbeat (Bug #34)
     }
     setSettings(settings) {
         this.settings = settings;
@@ -118,11 +119,18 @@ export function createMindServer(host_public = false, port = 8080) {
             if (agent_connections[agentName]) {
                 agent_connections[agentName].socket = socket;
                 agent_connections[agentName].in_game = true;
+                agent_connections[agentName].last_heartbeat = Date.now(); // Reset on login
                 curAgentName = agentName;
                 agentsStatusUpdate();
             }
             else {
                 console.warn(`Unregistered agent ${agentName} tried to login`);
+            }
+        });
+
+        socket.on('agent-heartbeat', (agentName) => {
+            if (agent_connections[agentName]) {
+                agent_connections[agentName].last_heartbeat = Date.now();
             }
         });
 
@@ -224,6 +232,21 @@ export function createMindServer(host_public = false, port = 8080) {
     server.listen(port, host, () => {
         console.log(`MindServer running on port ${port} on host ${host}`);
     });
+
+    // FIXED: Watchdog untuk mendeteksi agent yang crash/hang (Bug #34)
+    setInterval(() => {
+        let changed = false;
+        const now = Date.now();
+        for (let agentName in agent_connections) {
+            const conn = agent_connections[agentName];
+            if (conn.in_game && (now - conn.last_heartbeat > 15000)) {
+                console.log(`[Watchdog] Agent ${agentName} heartbeat timeout. Marking as crashed.`);
+                conn.in_game = false;
+                changed = true;
+            }
+        }
+        if (changed) agentsStatusUpdate();
+    }, 5000);
 
     return server;
 }

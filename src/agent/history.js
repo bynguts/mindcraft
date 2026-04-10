@@ -33,9 +33,34 @@ export class History {
         console.log("Storing memories...");
         this.memory = await this.agent.prompter.promptMemSaving(turns);
 
-        if (this.memory.length > 500) {
-            this.memory = this.memory.slice(0, 500);
-            this.memory += '...(Memory truncated to 500 chars. Compress it more next time)';
+        // FIXED: Proactive Auto-Compression before hitting the hard limit (Bug #38)
+        let compressAttempts = 0;
+        while (this.memory && this.memory.length > 500 && compressAttempts < 2) {
+            console.log(`[History] Memory too large (${this.memory.length} chars). Triggering active auto-compression...`);
+
+            const compressMsg = [{
+                role: 'user',
+                content: `Condense this text to strictly UNDER 500 characters. Keep only the most vital facts and omit conversational filler:\n\n${this.memory}`
+            }];
+
+            try {
+                let compressed = await this.agent.prompter.chat_model.sendRequest(compressMsg, "You are a highly efficient text compressor. Output ONLY the compressed text.");
+
+                // Strip out reasoning tags if using models like DeepSeek
+                if (compressed?.includes('</think>')) {
+                    compressed = compressed.split('</think>')[1].trim();
+                }
+                this.memory = compressed.trim();
+            } catch (err) {
+                console.warn('[History] Auto-compression failed, falling back to hard truncation.');
+                break;
+            }
+            compressAttempts++;
+        }
+
+        // Fallback hard truncation just in case the LLM stubbornly refuses to shorten it
+        if (this.memory && this.memory.length > 500) {
+            this.memory = this.memory.slice(0, 497) + '...';
         }
 
         console.log("Memory updated to: ", this.memory);
@@ -86,7 +111,9 @@ export class History {
                 self_prompting_state: this.agent.self_prompter.state,
                 self_prompt: this.agent.self_prompter.isStopped() ? null : this.agent.self_prompter.prompt,
                 taskStart: this.agent.task.taskStartTime,
-                last_sender: this.agent.last_sender
+                last_sender: this.agent.last_sender,
+                // FIXED: Include quest board in memory persistence (Bug #39)
+                quests: this.agent.memory_bank.quests || {}
             };
             writeFileSync(this.memory_fp, JSON.stringify(data, null, 2));
             console.log('Saved memory to:', this.memory_fp);
