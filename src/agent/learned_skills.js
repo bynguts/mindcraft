@@ -69,14 +69,15 @@ export class LearnedSkills {
         }
     }
 
-    // Register a new skill with explicit success/fail tracking
-    registerSkill(skillName, description, embedding, tags = []) {
+    // FIXED: Tambahkan parameter dependencies dan perbaiki urutan argumen
+    registerSkill(skillName, description, embedding, tags = [], dependencies = []) {
         this.reload();
 
         // 1. Simpan data ringan ke metadata
         this.metadata[skillName] = {
             description: description,
             tags: tags,
+            dependencies: dependencies,
             success_count: 0,
             fail_count: 0,
             learned_at: new Date().toISOString()

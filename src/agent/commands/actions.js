@@ -58,9 +58,47 @@ export const actionsList = [
 
                         if (!fs.existsSync(saveFolder)) fs.mkdirSync(saveFolder, { recursive: true });
 
+                        let depsArray = typeof dependencies === 'string' && dependencies.trim() !== '' ? dependencies.split(',').map(d => d.trim()) : [];
+                        let newEmbedding = null;
+                        let isDuplicate = false;
+
+                        // FIXED: Generate embedding dan cek Deduplikasi SEBELUM menentukan nama file backup
+                        if (agent.learned_skills) {
+                            let textToEmbed = `${cleanName} ${prompt} ${depsArray.join(' ')}`;
+                            try {
+                                if (agent.prompter && agent.prompter.embedding_model) {
+                                    newEmbedding = await agent.prompter.embedding_model.embed(textToEmbed);
+                                }
+                            } catch (e) {
+                                console.warn('Failed to generate embedding for new action.', e);
+                            }
+
+                            let highestSim = 0;
+                            let mostSimilarSkill = null;
+                            if (newEmbedding && agent.learned_skills.vectorCache) {
+                                for (const [sName, sVector] of Object.entries(agent.learned_skills.vectorCache)) {
+                                    if (sVector && Array.isArray(sVector)) {
+                                        let sim = agent.learned_skills.cosineSimilarity(newEmbedding, sVector);
+                                        if (sim > highestSim) {
+                                            highestSim = sim;
+                                            mostSimilarSkill = sName;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Threshold 0.92 untuk menentukan duplikasi
+                            if (highestSim > 0.92 && mostSimilarSkill) {
+                                console.log(`[LearnedSkills] Skill deduplication: '${cleanName}' is similar to '${mostSimilarSkill}' (${highestSim.toFixed(2)}). Updating existing skill.`);
+                                cleanName = mostSimilarSkill;
+                                isDuplicate = true;
+                            }
+                        }
+
                         const historyFolder = path.join(saveFolder, 'history');
                         const targetFile = path.join(saveFolder, `${cleanName}.js`);
 
+                        // Logika Backup (Sekarang aman karena cleanName sudah di-update jika duplikat)
                         if (fs.existsSync(targetFile)) {
                             if (!fs.existsSync(historyFolder)) fs.mkdirSync(historyFolder, { recursive: true });
 
@@ -70,14 +108,13 @@ export const actionsList = [
                             fs.renameSync(targetFile, backupPath);
                             console.log(`[Versioning] Backed up old version of ${cleanName} to history.`);
 
-                            // FIXED: Rolling backup cleanup. Keep only the 5 most recent backups per skill.
                             try {
                                 const maxBackups = 5;
                                 const files = fs.readdirSync(historyFolder);
                                 const backups = files
                                     .filter(f => f.startsWith(`${cleanName}_`) && f.endsWith('.js.bak'))
                                     .map(f => ({ name: f, time: fs.statSync(path.join(historyFolder, f)).mtime.getTime() }))
-                                    .sort((a, b) => b.time - a.time); // Urutkan dari yang terbaru ke terlama
+                                    .sort((a, b) => b.time - a.time);
 
                                 if (backups.length > maxBackups) {
                                     for (let i = maxBackups; i < backups.length; i++) {
@@ -90,50 +127,50 @@ export const actionsList = [
                             }
                         }
 
+                        // Simpan file skill baru/update
                         fs.copyFileSync(lastFile, targetFile);
 
-                        // FIXED: Parse dependencies dan daftarkan ke metadata (Bug #36)
-                        let depsArray = typeof dependencies === 'string' && dependencies.trim() !== '' ? dependencies.split(',').map(d => d.trim()) : [];
-
                         if (agent.learned_skills) {
-                            agent.learned_skills.registerSkill(cleanName, prompt, ["auto-generated", "action"], depsArray);
+                            // Argumen sekarang dikirim ke posisi yang benar
+                            agent.learned_skills.registerSkill(cleanName, prompt, newEmbedding, ["auto-generated", "action", isDuplicate ? "updated" : "new"], depsArray);
                         }
-                        const newCommand = {
-                            name: `!${cleanName}`,
-                            description: `Automatic skill: ${cleanName.replace(/_/g, ' ')}. Use this !${cleanName} command if the user asks you to perform a similar action or one with the same meaning.`,
-                            perform: runAsAction(async (agent) => {
-                                const src = fs.readFileSync(`${saveFolder}${cleanName}.js`, 'utf8');
-                                const compartment = makeCompartment({
-                                    skills: skills,
-                                    log: skills.log,
-                                    world: worldLib,
-                                    Vec3
-                                });
 
-                                try {
-                                    const mainFn = compartment.evaluate(src);
-                                    await mainFn(agent.bot);
+                        // Jika bukan duplikat, tambahkan ke list command internal bot
+                        if (!isDuplicate) {
+                            const newCommand = {
+                                name: `!${cleanName}`,
+                                description: `Automatic skill: ${cleanName.replace(/_/g, ' ')}. Use this !${cleanName} command if the user asks you to perform a similar action or one with the same meaning.`,
+                                perform: runAsAction(async (agent) => {
+                                    const src = fs.readFileSync(`${saveFolder}${cleanName}.js`, 'utf8');
+                                    const compartment = makeCompartment({
+                                        skills: skills,
+                                        log: skills.log,
+                                        world: worldLib,
+                                        Vec3
+                                    });
 
-                                    // SUCCESS TRACKING: Report successful execution
-                                    if (agent.learned_skills) {
-                                        agent.learned_skills.updateSkillPerformance(cleanName, true);
+                                    try {
+                                        const mainFn = compartment.evaluate(src);
+                                        await mainFn(agent.bot);
+
+                                        if (agent.learned_skills) {
+                                            agent.learned_skills.updateSkillPerformance(cleanName, true);
+                                        }
+                                    } catch (err) {
+                                        console.error(`Skill ${cleanName} execution failed:`, err);
+                                        if (agent.learned_skills) {
+                                            agent.learned_skills.updateSkillPerformance(cleanName, false);
+                                        }
+                                        throw err;
                                     }
-                                } catch (err) {
-                                    console.error(`Skill ${cleanName} execution failed:`, err);
+                                })
+                            };
 
-                                    // FAILURE TRACKING: Report failed execution
-                                    if (agent.learned_skills) {
-                                        agent.learned_skills.updateSkillPerformance(cleanName, false);
-                                    }
-                                    throw err;
-                                }
-                            })
-                        };
+                            actionsList.push(newCommand);
+                            addCommand(newCommand);
+                        }
 
-                        actionsList.push(newCommand);
-                        addCommand(newCommand);
-
-                        result += `\n[SUCCESS: Skill !${cleanName} has been learned and is ready to use.]`;
+                        result += `\n[SUCCESS: Skill !${cleanName} has been ${isDuplicate ? 'updated' : 'learned'} and is ready to use.]`;
                     }
                 } catch (e) {
                     result = 'Error generating code: ' + e.toString();
