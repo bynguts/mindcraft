@@ -29,7 +29,19 @@ export class LearnedSkills {
 
         this.reload();
 
+        // FIXED: MIGRATION - Bersihkan metadata lama yang membengkak karena data.embedding
+        let needsMigration = false;
+        for (const [sName, sData] of Object.entries(this.metadata)) {
+            if (sData.embedding) {
+                delete sData.embedding;
+                needsMigration = true;
+            }
+        }
+
         if (Object.keys(this.metadata).length === 0 && !fs.existsSync(this.metadataPath)) {
+            this.save();
+        } else if (needsMigration) {
+            console.log('[LearnedSkills] Migrating old metadata: Cleaned up bloated embedding data.');
             this.save();
         } else {
             console.log(`[LearnedSkills] Loaded ${Object.keys(this.metadata).length} skills metadata.`);
@@ -38,10 +50,15 @@ export class LearnedSkills {
 
     // FIXED: Synchronize state before modifying to prevent race conditions across agents
     reload() {
+        if (fs.existsSync(this.metadataPath)) {
+            try {
+                this.metadata = JSON.parse(fs.readFileSync(this.metadataPath, 'utf8'));
+            } catch (e) { console.error('[LearnedSkills] Error parsing metadata.json', e); }
+        }
         if (fs.existsSync(this.vectorCachePath)) {
             try {
                 this.vectorCache = JSON.parse(fs.readFileSync(this.vectorCachePath, 'utf8'));
-            } catch (e) { }
+            } catch (e) { console.error('[LearnedSkills] Error parsing vector_cache.json', e); }
         }
     }
 
@@ -157,19 +174,28 @@ export class LearnedSkills {
         for (const [skillName, data] of Object.entries(this.metadata)) {
             let score = 0;
 
-            // 2. Semantic Search Logic
+            // 2. Semantic Search Logic (FIXED: Route strictly to vectorCache and add Guard Clause)
             if (queryEmbedding) {
-                // Cache skill embedding biar ngga boros API calls
-                if (!data.embedding) {
-                    const textToEmbed = `${skillName} ${data.description} ${data.tags.join(' ')}`;
+                if (!this.vectorCache[skillName]) {
+                    const tagsText = data.tags ? data.tags.join(' ') : '';
+                    const textToEmbed = `${skillName} ${data.description} ${tagsText}`;
                     try {
-                        data.embedding = await this.agent.prompter.embedding_model.embed(textToEmbed);
-                        metadataChanged = true;
-                    } catch (e) { }
+                        const newEmbed = await this.agent.prompter.embedding_model.embed(textToEmbed);
+                        // GUARD CLAUSE: Jangan save ke cache kalau API gagal/down
+                        if (newEmbed && Array.isArray(newEmbed) && newEmbed.length > 0) {
+                            this.vectorCache[skillName] = newEmbed;
+                            metadataChanged = true;
+                        } else {
+                            console.warn(`[LearnedSkills] Invalid embedding for '${skillName}'. Skipping cache.`);
+                        }
+                    } catch (e) {
+                        console.warn(`[LearnedSkills] Embedding API failed for '${skillName}':`, e.message);
+                    }
                 }
 
-                if (data.embedding) {
-                    score = this.cosineSimilarity(queryEmbedding, data.embedding);
+                const skillVector = this.vectorCache[skillName];
+                if (skillVector) {
+                    score = this.cosineSimilarity(queryEmbedding, skillVector);
                 }
             }
 
