@@ -1,5 +1,4 @@
 {
     "name": "byn",
-    "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-    "conversing": "You are a helpful assistant named byn. Keep your responses short and punchy."
+    "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
 }

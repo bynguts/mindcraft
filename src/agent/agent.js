@@ -186,9 +186,10 @@ export class Agent {
 
             const currentMsg = `${username}:${message}`;
             const currentTime = Date.now();
-            if (currentMsg === this.lastMessageContent && (currentTime - this.lastMessageTime) < 1000) {
+            if (currentMsg === this.lastMessageContent && (currentTime - this.lastMessageTime) < 500) {
                 return;
             }
+
             this.lastMessageContent = currentMsg;
             this.lastMessageTime = currentTime;
 
