@@ -69,6 +69,25 @@ export const actionsList = [
 
                             fs.renameSync(targetFile, backupPath);
                             console.log(`[Versioning] Backed up old version of ${cleanName} to history.`);
+
+                            // FIXED: Rolling backup cleanup. Keep only the 5 most recent backups per skill.
+                            try {
+                                const maxBackups = 5;
+                                const files = fs.readdirSync(historyFolder);
+                                const backups = files
+                                    .filter(f => f.startsWith(`${cleanName}_`) && f.endsWith('.js.bak'))
+                                    .map(f => ({ name: f, time: fs.statSync(path.join(historyFolder, f)).mtime.getTime() }))
+                                    .sort((a, b) => b.time - a.time); // Urutkan dari yang terbaru ke terlama
+
+                                if (backups.length > maxBackups) {
+                                    for (let i = maxBackups; i < backups.length; i++) {
+                                        fs.unlinkSync(path.join(historyFolder, backups[i].name));
+                                        console.log(`[Versioning] Pruned obsolete backup: ${backups[i].name}`);
+                                    }
+                                }
+                            } catch (err) {
+                                console.error(`[Versioning] Failed to cleanup old backups: ${err.message}`);
+                            }
                         }
 
                         fs.copyFileSync(lastFile, targetFile);

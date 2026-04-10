@@ -159,8 +159,9 @@ export class Prompter {
             }
 
             if (this.agent.memory_bank) {
+                // FIXED: Array proper length check to avoid type mismatch confusion
                 const quests = this.agent.memory_bank.quests;
-                if (quests && Object.keys(quests).length > 0) {
+                if (Array.isArray(quests) && quests.length > 0) {
                     docs += this.agent.memory_bank.getQuestBoard();
                 }
             }

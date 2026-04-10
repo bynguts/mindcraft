@@ -70,26 +70,21 @@ export class LearnedSkills {
     }
 
     // Register a new skill with explicit success/fail tracking
-    registerSkill(skillName, description, tags = [], dependencies = []) {
-        this.reload(); // Sync with other agents before writing
+    registerSkill(skillName, description, embedding, tags = []) {
+        this.reload();
 
-        if (!this.metadata[skillName]) {
-            this.metadata[skillName] = {
-                description: description,
-                tags: tags,
-                dependencies: dependencies, // Simpan ke metadata
-                success_count: 0,
-                fail_count: 0,
-                learned_at: new Date().toISOString()
-            };
-        } else {
-            this.metadata[skillName].description = description;
-            this.metadata[skillName].tags = tags;
-            // Update dependencies jika ada nilai baru yang lebih relevan
-            if (dependencies && dependencies.length > 0) {
-                this.metadata[skillName].dependencies = dependencies;
-            }
-        }
+        // 1. Simpan data ringan ke metadata
+        this.metadata[skillName] = {
+            description: description,
+            tags: tags,
+            success_count: 0,
+            fail_count: 0,
+            learned_at: new Date().toISOString()
+        };
+
+        // 2. Simpan array float 1536 dimensi murni ke vector cache
+        this.vectorCache[skillName] = embedding;
+
         this.save();
         console.log(`[LearnedSkills] Registered skill: ${skillName}`);
     }

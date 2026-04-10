@@ -114,7 +114,7 @@ export class History {
                 taskStart: this.agent.task.taskStartTime,
                 last_sender: this.agent.last_sender,
                 // FIXED: Include quest board in memory persistence (Bug #39)
-                quests: this.agent.memory_bank.quests || {}
+                quests: this.agent.memory_bank.quests || []
             };
             writeFileSync(this.memory_fp, JSON.stringify(data, null, 2));
             console.log('Saved memory to:', this.memory_fp);
