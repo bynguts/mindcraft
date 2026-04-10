@@ -1035,16 +1035,19 @@ export async function goToGoal(bot, goal) {
         }
     }
 
-    const doorCheckInterval = startDoorInterval(bot);
-
-    bot.pathfinder.setMovements(final_movements);
+    // FIXED: Use try...finally to absolutely guarantee interval cleanup and prevent memory leaks
+    let doorCheckInterval = null;
     try {
+        doorCheckInterval = startDoorInterval(bot);
+        bot.pathfinder.setMovements(final_movements);
         await bot.pathfinder.goto(goal);
-        clearInterval(doorCheckInterval);
         return true;
     } catch (err) {
-        clearInterval(doorCheckInterval);
         throw err;
+    } finally {
+        if (doorCheckInterval !== null) {
+            clearInterval(doorCheckInterval);
+        }
     }
 }
 
