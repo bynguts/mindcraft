@@ -13,6 +13,9 @@ import { selectAPI, createModel } from './_model_map.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// FIXED: Global tracker to queue API requests across all agent instances
+let global_next_available_time = Date.now();
+
 export class Prompter {
     constructor(agent, profile) {
         this.agent = agent;
@@ -220,16 +223,32 @@ export class Prompter {
     }
 
     async checkCooldown() {
-        const currentTime = Date.now();
-        const elapsed = currentTime - this.last_prompt_time;
-        const minWait = this.cooldown > 0 ? this.cooldown : 2000; // 2s safety floor
+        // FIXED: Implemented Global Request Queueing for Multi-Agent coordination.
+        // Prevents API 429 Rate Limit crashes by forcing agents to claim distinct time slots.
+        const minWait = this.cooldown > 0 ? this.cooldown : 2000;
+        let sleepTime = 0;
 
-        if (elapsed < minWait) {
-            const sleepTime = minWait - elapsed;
-            console.log(`[Prompter] Throttling request: Waiting ${sleepTime}ms...`);
+        const now = Date.now();
+
+        // Fast-forward the global queue if no one has requested anything recently
+        if (global_next_available_time < now) {
+            global_next_available_time = now;
+        }
+
+        // Calculate how long THIS specific agent needs to wait in the global line
+        if (global_next_available_time > now) {
+            sleepTime = global_next_available_time - now;
+        }
+
+        // Synchronously claim the slot so the next agent is pushed further back
+        global_next_available_time += minWait;
+
+        if (sleepTime > 0) {
+            console.log(`[Prompter] Global throttle: Queuing request for ${sleepTime}ms to prevent API rate limits...`);
             await new Promise(r => setTimeout(r, sleepTime));
         }
-        this.last_prompt_time = Date.now();
+
+        this.last_prompt_time = Date.now(); // Keep local tracker updated
     }
 
     async promptConvo(messages) {
