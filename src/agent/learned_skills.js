@@ -13,8 +13,16 @@ export class LearnedSkills {
     }
 
     init() {
-        if (!fs.existsSync(this.dirPath)) {
-            fs.mkdirSync(this.dirPath, { recursive: true });
+        // FIXED: Wrap directory creation in try-catch to prevent synchronous constructor crashes
+        // Handles cases where OS permissions deny folder creation
+        try {
+            if (!fs.existsSync(this.dirPath)) {
+                fs.mkdirSync(this.dirPath, { recursive: true });
+            }
+        } catch (err) {
+            console.error(`[LearnedSkills] Critical Error: Failed to create directory at ${this.dirPath}. Permission denied? Error:`, err.message);
+            this.disabled = true; // Disable saving to prevent further crashes
+            return;
         }
 
         this.reload();
@@ -40,6 +48,9 @@ export class LearnedSkills {
 
     // FIXED: Implemented POSIX Atomic Write pattern to prevent JSON corruption during concurrent writes
     save() {
+        // FIXED: Do not attempt to save if initialization failed (e.g., no permissions)
+        if (this.disabled) return;
+
         const tmpPath = `${this.metadataPath}.tmp`;
         try {
             // Write to a temporary file first
