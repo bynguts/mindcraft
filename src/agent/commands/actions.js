@@ -53,7 +53,8 @@ export const actionsList = [
                         let cleanName = prompt.split(' ').slice(0, 4).join('_').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                         if (!cleanName || cleanName === '') cleanName = 'custom_action_' + Date.now();
 
-                        let lastFile = `.${agent.coder.fp}${prevCounter}.js`;
+                        // FIXED: Sesuaikan pembacaan dengan nama file statis baru dari coder.js
+                        let lastFile = `.${agent.coder.fp}current.js`;
                         let saveFolder = './bots/saved_skills/';
 
                         if (!fs.existsSync(saveFolder)) fs.mkdirSync(saveFolder, { recursive: true });

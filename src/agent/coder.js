@@ -169,18 +169,10 @@ export class Coder {
         let src_lint_copy = this.code_lint_template.replace('/* CODE HERE */', src);
         src = this.code_template.replace('/* CODE HERE */', src);
 
-        let filename = this.file_counter + '.js';
+        // FIXED: Selalu overwrite satu file statis untuk mencegah disk leak jika crash
+        // Tetap increment file_counter sebagai "flag" penanda sukses untuk dibaca oleh actions.js
         this.file_counter++;
-
-        // FIXED: Hapus file lama biar hardisk nggak penuh
-        if (this.file_counter > 1) {
-            let prev_filename = '.' + this.fp + (this.file_counter - 2) + '.js';
-            if (existsSync(prev_filename)) {
-                unlink(prev_filename, (err) => {
-                    if (err) console.error(`[Coder] Gagal menghapus file lama:`, err);
-                });
-            }
-        }
+        let filename = 'current.js';
 
         let write_result = await this._writeFilePromise('.' + this.fp + filename, src);
         // This is where we determine the environment the agent's code should be exposed to.
