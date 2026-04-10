@@ -65,7 +65,7 @@ export class ActionManager {
         try {
             if (this.last_action_time > 0) {
                 let time_diff = Date.now() - this.last_action_time;
-                if (time_diff < 20) {
+                if (time_diff < 50) {
                     this.recent_action_counter++;
                 }
                 else {

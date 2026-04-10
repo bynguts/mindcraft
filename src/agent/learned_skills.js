@@ -48,17 +48,21 @@ export class LearnedSkills {
         }
     }
 
-    // FIXED: Synchronize state before modifying to prevent race conditions across agents
     reload() {
+        // FIXED: Pastikan metadata.json juga dibaca ulang agar success_count/fail_count tidak kereset (Bug #42)
         if (fs.existsSync(this.metadataPath)) {
             try {
                 this.metadata = JSON.parse(fs.readFileSync(this.metadataPath, 'utf8'));
-            } catch (e) { console.error('[LearnedSkills] Error parsing metadata.json', e); }
+            } catch (e) {
+                console.error('[LearnedSkills] Error parsing metadata.json', e);
+            }
         }
         if (fs.existsSync(this.vectorCachePath)) {
             try {
                 this.vectorCache = JSON.parse(fs.readFileSync(this.vectorCachePath, 'utf8'));
-            } catch (e) { console.error('[LearnedSkills] Error parsing vector_cache.json', e); }
+            } catch (e) {
+                console.error('[LearnedSkills] Error parsing vector_cache.json', e);
+            }
         }
     }
 
