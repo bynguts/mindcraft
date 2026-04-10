@@ -666,6 +666,57 @@ export const actionsList = [
             await skills.saddleEntity(agent.bot, entity_name);
         })
     },
+    {
+        name: '!rollbackSkill',
+        description: 'Restore the most recent backup of a skill from history if the new version is broken or performs worse.',
+        params: {
+            'skill_name': { type: 'string', description: 'The name of the skill to rollback (without the ! prefix).' }
+        },
+        perform: async function (agent, skill_name) {
+            // Clean up prefix just in case the AI includes it
+            if (skill_name.startsWith('!')) skill_name = skill_name.substring(1);
+
+            const saveFolder = './bots/saved_skills/';
+            const historyFolder = path.join(saveFolder, 'history');
+            const targetFile = path.join(saveFolder, `${skill_name}.js`);
+
+            if (!fs.existsSync(historyFolder)) {
+                return `No backup history found. Cannot rollback ${skill_name}.`;
+            }
+
+            try {
+                const files = fs.readdirSync(historyFolder);
+                // FIXED: Find all backups for this skill, sort by modification time (newest first)
+                const backups = files
+                    .filter(f => f.startsWith(`${skill_name}_`) && f.endsWith('.js.bak'))
+                    .map(f => ({ name: f, time: fs.statSync(path.join(historyFolder, f)).mtime.getTime() }))
+                    .sort((a, b) => b.time - a.time);
+
+                if (backups.length === 0) {
+                    return `No previous versions found for skill '!${skill_name}'.`;
+                }
+
+                const latestBackup = backups[0].name;
+                const backupPath = path.join(historyFolder, latestBackup);
+
+                // Restore the backup by overwriting the current corrupted skill
+                fs.copyFileSync(backupPath, targetFile);
+
+                // Delete the restored backup so a subsequent rollback goes to an even older version
+                fs.unlinkSync(backupPath);
+
+                // FIXED: Hot-reload the skill directly into the agent's brain without restarting
+                loadSavedSkills();
+
+                skills.log(agent.bot, `[Rollback] Successfully restored '!${skill_name}' from backup: ${latestBackup}`);
+                return `[SUCCESS] Rolled back '!${skill_name}' to its previous working version.`;
+
+            } catch (err) {
+                console.error(`[Rollback] Error rolling back ${skill_name}:`, err);
+                return `Failed to rollback ${skill_name}: ${err.message}`;
+            }
+        }
+    },
 ];
 
 // FIXED: Encapsulated auto-load logic to prevent module-scope blocking and crashes.
