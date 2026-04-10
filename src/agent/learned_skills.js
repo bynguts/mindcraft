@@ -17,27 +17,44 @@ export class LearnedSkills {
             fs.mkdirSync(this.dirPath, { recursive: true });
         }
 
+        this.reload();
+
+        if (Object.keys(this.metadata).length === 0 && !fs.existsSync(this.metadataPath)) {
+            this.save();
+        } else {
+            console.log(`[LearnedSkills] Loaded ${Object.keys(this.metadata).length} skills metadata.`);
+        }
+    }
+
+    // FIXED: Synchronize state before modifying to prevent race conditions across agents
+    reload() {
         if (fs.existsSync(this.metadataPath)) {
             const rawData = fs.readFileSync(this.metadataPath, 'utf8');
             try {
                 this.metadata = JSON.parse(rawData);
-                console.log(`[LearnedSkills] Loaded ${Object.keys(this.metadata).length} skills metadata.`);
             } catch (error) {
-                console.error('[LearnedSkills] Error parsing metadata.json, resetting.');
-                this.metadata = {};
-                this.save();
+                console.error('[LearnedSkills] Error parsing metadata.json during reload. Keeping cached state.');
             }
-        } else {
-            this.save();
         }
     }
 
+    // FIXED: Implemented POSIX Atomic Write pattern to prevent JSON corruption during concurrent writes
     save() {
-        fs.writeFileSync(this.metadataPath, JSON.stringify(this.metadata, null, 4));
+        const tmpPath = `${this.metadataPath}.tmp`;
+        try {
+            // Write to a temporary file first
+            fs.writeFileSync(tmpPath, JSON.stringify(this.metadata, null, 4));
+            // Rename is an atomic OS operation, guaranteeing file integrity
+            fs.renameSync(tmpPath, this.metadataPath);
+        } catch (err) {
+            console.error('[LearnedSkills] Failed to save metadata atomically:', err);
+        }
     }
 
     // Register a new skill with explicit success/fail tracking
     registerSkill(skillName, description, tags = []) {
+        this.reload(); // Sync with other agents before writing
+
         if (!this.metadata[skillName]) {
             this.metadata[skillName] = {
                 description: description,
@@ -56,6 +73,8 @@ export class LearnedSkills {
 
     // PHASE 3: Update performance and auto-delete low-quality skills
     updateSkillPerformance(skillName, isSuccess) {
+        this.reload(); // Sync with other agents to ensure accurate usage counts
+
         if (!this.metadata[skillName]) return;
 
         const skill = this.metadata[skillName];
