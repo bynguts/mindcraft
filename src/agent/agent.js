@@ -198,11 +198,10 @@ export class Agent {
             const { finalUsername, finalMessage } = this._parseDiscordMessage(message, username);
 
             // Convert both the bot's name and the incoming message to lowercase
-            const lowerName = this.name.toLowerCase();
-            const lowerText = finalMessage.toLowerCase();
+            const escapedName = this.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const nameRegex = new RegExp(`\\b${escapedName}\\b`, 'i'); // 'i' = case-insensitive
 
-            // Check if the lowercase message contains the lowercase name
-            const isMentioned = lowerText.includes(lowerName);
+            const isMentioned = nameRegex.test(finalMessage);
 
             // If the bot is not called, stay silent (skip function) - Except from Web UI (ADMIN)
             if (!isMentioned && username !== 'ADMIN') {
