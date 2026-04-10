@@ -545,7 +545,7 @@ export class Agent {
 
             console.log("[SERVER SPY] ->", message);
             // 1. Death Detection (Default)
-            if (jsonMsg.translate && jsonMsg.translate.startsWith('death') && message.startsWith(this.name)) {
+            if (jsonMsg.translate && jsonMsg.translate.startsWith('death') && message.startsWith(this.name + ' ')) {
                 console.log('Agent died: ', message);
                 let death_pos = this.bot.entity.position;
                 this.memory_bank.rememberPlace('last_death_position', death_pos.x, death_pos.y, death_pos.z);

@@ -126,15 +126,18 @@ export class ActionManager {
             // return action status report
             return { success: true, message: output, interrupted, timedout };
         } catch (err) {
+            // FIXED: Hentikan aksi fisik bot di Minecraft SEBELUM mengubah state.
+            // Memanggil requestInterrupt secara langsung memastikan pathfinder & pvp langsung mati.
+            this.agent.requestInterrupt();
+
             this.executing = false;
             this.currentActionLabel = '';
             this.currentActionFn = null;
             clearTimeout(TIMEOUT);
             this.cancelResume();
             console.error("Code execution triggered catch:", err);
-            // Log the full stack trace
             console.error(err.stack);
-            await this.stop();
+
             const stackTrace = err.stack || 'No stack trace available.';
             const errString = err.toString();
 
