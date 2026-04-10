@@ -158,7 +158,6 @@ export class Prompter {
             }
 
             if (this.agent.memory_bank) {
-                // FIXED: Only invoke getQuestBoard() and perform string concatenation if there are active quests. (Micro-Optimization)
                 const quests = this.agent.memory_bank.quests;
                 if (quests && Object.keys(quests).length > 0) {
                     docs += this.agent.memory_bank.getQuestBoard();
@@ -219,9 +218,18 @@ export class Prompter {
     }
 
     async checkCooldown() {
-        let elapsed = Date.now() - this.last_prompt_time;
-        if (elapsed < this.cooldown && this.cooldown > 0) {
-            await new Promise(r => setTimeout(r, this.cooldown - elapsed));
+        // FIXED: Robust throttle implementation. 
+        // Ensures a minimum delay between ANY two API requests to prevent rate-limit crashes.
+        const currentTime = Date.now();
+        const elapsed = currentTime - this.last_prompt_time;
+
+        // Use profile cooldown or default to 2000ms for safety on free tiers
+        const minWait = this.cooldown > 0 ? this.cooldown : 2000;
+
+        if (elapsed < minWait) {
+            const sleepTime = minWait - elapsed;
+            console.log(`[Prompter] Throttling request: Waiting ${sleepTime}ms to respect API rate limits...`);
+            await new Promise(r => setTimeout(r, sleepTime));
         }
         this.last_prompt_time = Date.now();
     }
