@@ -634,14 +634,10 @@ export const actionsList = [
 let skillsLoaded = false;
 
 export function loadSavedSkills() {
-    if (skillsLoaded) return; // Prevent duplicate loading in multi-agent scenarios
-    skillsLoaded = true;
-
     const saveFolder = './bots/saved_skills/';
     const metadataPath = `${saveFolder}metadata.json`;
     let validSkills = {};
 
-    // 1. Load the valid skills from metadata first
     if (fs.existsSync(metadataPath)) {
         try {
             validSkills = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
@@ -656,14 +652,17 @@ export function loadSavedSkills() {
             if (file.endsWith('.js')) {
                 const commandName = file.replace('.js', '');
 
-                // 2. Zombie File Cleanup
                 if (!validSkills[commandName]) {
                     console.log(`[Auto-Skill] Deleting orphaned/outdated zombie skill: ${file}`);
                     fs.unlinkSync(`${saveFolder}${file}`);
                     continue;
                 }
 
-                // 3. Load valid skill
+                const existingIndex = actionsList.findIndex(a => a.name === `!${commandName}`);
+                if (existingIndex !== -1) {
+                    actionsList.splice(existingIndex, 1);
+                }
+
                 const newCommand = {
                     name: `!${commandName}`,
                     description: validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`,
@@ -680,25 +679,23 @@ export function loadSavedSkills() {
                             const mainFn = compartment.evaluate(src);
                             await mainFn(agent.bot);
 
-                            // PHASE 3: Report Success
                             if (agent.learned_skills) {
                                 agent.learned_skills.updateSkillPerformance(commandName, true);
                             }
                         } catch (err) {
                             console.error(`[Auto-Skill] ${commandName} execution failed:`, err);
 
-                            // PHASE 3: Report Failure
                             if (agent.learned_skills) {
                                 agent.learned_skills.updateSkillPerformance(commandName, false);
                             }
-                            throw err; // Keep throwing so the agent knows it failed
+                            throw err;
                         }
                     })
                 };
 
                 actionsList.push(newCommand);
-                addCommand(newCommand); // Registers the command dynamically into index.js
-                console.log(`[Auto-Load] Valid skill loaded: !${commandName}`);
+                addCommand(newCommand);
+                console.log(`[Auto-Load] Valid skill loaded/reloaded: !${commandName}`);
             }
         }
     }
