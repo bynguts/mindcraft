@@ -479,9 +479,14 @@ export async function collectBlock(bot, blockType, num = 1, exclude = null) {
                 log(bot, `Failed to collect ${blockType}: Inventory full, no place to deposit.`);
                 break;
             }
-            else {
-                log(bot, `Failed to collect ${blockType}: ${err}.`);
+            else if (err.message && err.message.includes('Timeout')) {
+                log(bot, `[Warning] Timeout collecting ${blockType}. Moving to next block.`);
                 continue;
+            }
+            else {
+                log(bot, `[FATAL] Critical error collecting ${blockType}: ${err.message}`);
+                console.error(`[collectBlock 🚨] Fatal Error:`, err);
+                throw err;
             }
         }
 
@@ -736,8 +741,12 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn = 'bottom', do
             return true;
         }
     } catch (err) {
-        log(bot, `Failed to place ${blockType} at ${target_dest}.`);
-        return false;
+        log(bot, `Failed to place ${blockType} at ${target_dest}: ${err.message}`);
+        if (err.message && (err.message.includes('impossible to place') || err.message.includes('No block has been placed'))) {
+            return false;
+        }
+        console.error(`[placeBlock 🚨] Fatal Error at ${target_dest}:`, err);
+        throw err;
     }
 }
 
@@ -1002,7 +1011,7 @@ export async function giveToPlayer(bot, itemType, username, num = 1) {
     return false;
 }
 
-export async function goToGoal(bot, goal) {
+export async function goToGoal(bot, goal, timeoutMs = 30000) {
     /**
      * Navigate to the given goal. Use doors and attempt minimally destructive movements.
      * @param {MinecraftBot} bot, reference to the minecraft bot.
@@ -1035,26 +1044,53 @@ export async function goToGoal(bot, goal) {
         }
     }
 
-
-
     let doorCheckInterval = null;
+    let stuckCheckInterval = null;
+    let lastPosition = bot.entity.position.clone();
+    let stuckCounter = 0;
+
     try {
         doorCheckInterval = startDoorInterval(bot);
+
+        stuckCheckInterval = setInterval(() => {
+            const currentPos = bot.entity.position;
+            if (currentPos.distanceTo(lastPosition) < 0.5) {
+                stuckCounter++;
+                if (stuckCounter >= 3) {
+                    bot.pathfinder.stop();
+                    bot.setControlState('jump', true);
+                    setTimeout(() => bot.setControlState('jump', false), 500);
+                    stuckCounter = 0;
+                }
+            } else {
+                stuckCounter = 0;
+            }
+            lastPosition = currentPos.clone();
+        }, 2000);
+
         bot.pathfinder.setMovements(final_movements);
 
-        // Call pathfinding and wait until finished
-        await bot.pathfinder.goto(goal);
+        const pathfindingPromise = bot.pathfinder.goto(goal);
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Pathfinding timeout - Target is too hard to reach.')), timeoutMs)
+        );
+
+        await Promise.race([pathfindingPromise, timeoutPromise]);
         return true;
     } catch (err) {
-
         console.log(`[Pathfinder] goToGoal failed or interrupted: ${err.message}`);
+        bot.pathfinder.stop();
         throw err;
     } finally {
-
         if (doorCheckInterval !== null) {
             clearInterval(doorCheckInterval);
             doorCheckInterval = null;
         }
+        if (stuckCheckInterval !== null) {
+            clearInterval(stuckCheckInterval);
+            stuckCheckInterval = null;
+        }
+        bot.clearControlStates();
     }
 }
 
