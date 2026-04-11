@@ -102,6 +102,12 @@ export class History {
             console.log(`[History] Flushed ${writtenCount} buffered messages to disk for ${this.name}`);
         } catch (err) {
             console.error(`Error flushing ${this.name}'s full history file: ${err.message}`);
+
+            this._lastFlushTime = Date.now();
+            if (this._historyBuffer.length > 250) {
+                console.warn(`[History 🚨] I/O Error! Discarding ${this._historyBuffer.length} messages from queue to prevent Memory Leak on agent ${this.name}.`);
+                this._historyBuffer = [];
+            }
         }
     }
 

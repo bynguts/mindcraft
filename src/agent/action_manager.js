@@ -103,7 +103,7 @@ export class ActionManager {
             this.executing = false;
             this.currentActionLabel = '';
             this.currentActionFn = null;
-            clearTimeout(TIMEOUT);
+            if (TIMEOUT) clearTimeout(TIMEOUT);
 
             let output = this.getBotOutputSummary();
             let interrupted = this.agent.bot.interrupt_code;
@@ -120,7 +120,7 @@ export class ActionManager {
             this.executing = false;
             this.currentActionLabel = '';
             this.currentActionFn = null;
-            clearTimeout(TIMEOUT);
+            if (TIMEOUT) clearTimeout(TIMEOUT);
             this.cancelResume();
             console.error("Code execution triggered catch:", err);
             console.error(err.stack);

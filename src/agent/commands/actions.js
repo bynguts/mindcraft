@@ -11,8 +11,6 @@ import { THRESHOLDS } from '../../utils/constants.js';
 
 lockdown();
 
-const skills = {};
-
 function runAsAction(actionFn, resume = false, timeout = -1) {
     let actionLabel = null;
 
