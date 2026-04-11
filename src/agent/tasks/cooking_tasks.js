@@ -218,69 +218,99 @@ export class CookingTaskInitiator {
         const depth = 10;
         const height = 5;
 
-        // Foundation and walls
-        for (let x = startX; x <= startX + depth; x++) {
-            for (let y = startY; y <= startY + height; y++) {
-                for (let z = startZ; z <= startZ + width; z++) {
-                    if (y === startY) {
-                        if (!(x === startX + depth - 1 && z === startZ + Math.floor(width / 2))) {
-                            await this.bot.chat(`/setblock ${x} ${y} ${z} stone_bricks`);
+        // FIXED: Deteksi penolakan command dari server (No Permission) sebelum masuk loop raksasa (Bug #41)
+        let hasPermission = true;
+        const permissionListener = (msg) => {
+            const text = msg.toString().toLowerCase();
+            // Cek keyword penolakan standar dari Vanilla / Spigot / PaperMC
+            if (text.includes('permission') || text.includes('unknown command') || text.includes('error')) {
+                hasPermission = false;
+            }
+        };
+
+        // Pasang pendengar chat sistem sementara
+        this.bot.on('message', permissionListener);
+
+        try {
+            // Tembakkan 1 blok pertama sebagai umpan tester
+            await this.bot.chat(`/setblock ${startX} ${startY} ${startZ} stone_bricks`);
+            await new Promise(resolve => setTimeout(resolve, 400)); // Tunggu respons server sebentar
+
+            if (!hasPermission) {
+                console.error('[CookingTasks] Batal membangun rumah: Bot tidak memiliki izin (No Permission) untuk menggunakan /setblock.');
+                return false; // Langsung keluar, selamatkan server dari 500+ command spam
+            }
+
+            // Foundation and walls
+            for (let x = startX; x <= startX + depth; x++) {
+                for (let y = startY; y <= startY + height; y++) {
+                    for (let z = startZ; z <= startZ + width; z++) {
+                        if (y === startY) {
+                            if (!(x === startX + depth - 1 && z === startZ + Math.floor(width / 2))) {
+                                await this.bot.chat(`/setblock ${x} ${y} ${z} stone_bricks`);
+                            }
+                            continue;
                         }
-                        continue;
-                    }
 
-                    if (x === startX || x === startX + depth ||
-                        z === startZ || z === startZ + width ||
-                        y === startY + height) {
+                        if (x === startX || x === startX + depth ||
+                            z === startZ || z === startZ + width ||
+                            y === startY + height) {
 
-                        const isWindow = (
-                            (x === startX || x === startX + depth) &&
-                            (z === startZ + 3 || z === startZ + width - 3) &&
-                            (y === startY + 2 || y === startY + 3)
-                        ) || (
-                                (z === startZ || z === startZ + width) &&
-                                (x === startX + 3 || x === startX + depth - 3) &&
+                            const isWindow = (
+                                (x === startX || x === startX + depth) &&
+                                (z === startZ + 3 || z === startZ + width - 3) &&
                                 (y === startY + 2 || y === startY + 3)
-                            );
+                            ) || (
+                                    (z === startZ || z === startZ + width) &&
+                                    (x === startX + 3 || x === startX + depth - 3) &&
+                                    (y === startY + 2 || y === startY + 3)
+                                );
 
-                        const isDoor = x === startX + depth &&
-                            z === startZ + Math.floor(width / 2) &&
-                            (y === startY + 1 || y === startY + 2);
+                            const isDoor = x === startX + depth &&
+                                z === startZ + Math.floor(width / 2) &&
+                                (y === startY + 1 || y === startY + 2);
 
-                        if (!isWindow && !isDoor) {
-                            await this.bot.chat(`/setblock ${x} ${y} ${z} stone_bricks`);
+                            if (!isWindow && !isDoor) {
+                                await this.bot.chat(`/setblock ${x} ${y} ${z} stone_bricks`);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Entrance features
-        const doorZ = startZ + Math.floor(width / 2);
-        await this.bot.chat(`/setblock ${startX + depth - 1} ${startY} ${doorZ} stone_brick_stairs[facing=west]`);
-        await this.bot.chat(`/setblock ${startX + depth} ${startY} ${doorZ} air`);
+            // Entrance features
+            const doorZ = startZ + Math.floor(width / 2);
+            await this.bot.chat(`/setblock ${startX + depth - 1} ${startY} ${doorZ} stone_brick_stairs[facing=west]`);
+            await this.bot.chat(`/setblock ${startX + depth} ${startY} ${doorZ} air`);
 
-        // Roof construction
-        for (let i = 0; i < 3; i++) {
-            for (let x = startX + i; x <= startX + depth - i; x++) {
-                for (let z = startZ + i; z <= startZ + width - i; z++) {
-                    if (x === startX + i || x === startX + depth - i ||
-                        z === startZ + i || z === startZ + width - i) {
-                        await this.bot.chat(`/setblock ${x} ${startY + height + i} ${z} cobblestone`);
+            // Roof construction
+            for (let i = 0; i < 3; i++) {
+                for (let x = startX + i; x <= startX + depth - i; x++) {
+                    for (let z = startZ + i; z <= startZ + width - i; z++) {
+                        if (x === startX + i || x === startX + depth - i ||
+                            z === startZ + i || z === startZ + width - i) {
+                            await this.bot.chat(`/setblock ${x} ${startY + height + i} ${z} cobblestone`);
+                        }
                     }
                 }
             }
-        }
 
-        // Interior items
-        await this.bot.chat(`/setblock ${startX + 4} ${startY + 1} ${startZ + 3} crafting_table`);
-        await this.bot.chat(`/setblock ${startX + 4} ${startY + 1} ${startZ + 5} furnace`);
-        // Add fuel to the furnace
-        await this.bot.chat(`/data merge block ${startX + 4} ${startY + 1} ${startZ + 5} {Items:[{Slot:1b,id:"minecraft:coal",Count:64b}]}`)
-        await this.bot.chat(`/setblock ${startX + 4} ${startY + 1} ${startZ + 7} smoker`);
-        // Add fuel to the smoker
-        await this.bot.chat(`/data merge block ${startX + 4} ${startY + 1} ${startZ + 7} {Items:[{Slot:1b,id:"minecraft:coal",Count:64b}]}`)
-        await this.bot.chat(`/setblock ${startX + depth - 3} ${startY + 1} ${startZ + 2} bed`);
-        await new Promise(resolve => setTimeout(resolve, 300));
+            // Interior items
+            await this.bot.chat(`/setblock ${startX + 4} ${startY + 1} ${startZ + 3} crafting_table`);
+            await this.bot.chat(`/setblock ${startX + 4} ${startY + 1} ${startZ + 5} furnace`);
+            await this.bot.chat(`/data merge block ${startX + 4} ${startY + 1} ${startZ + 5} {Items:[{Slot:1b,id:"minecraft:coal",Count:64b}]}`)
+            await this.bot.chat(`/setblock ${startX + 4} ${startY + 1} ${startZ + 7} smoker`);
+            await this.bot.chat(`/data merge block ${startX + 4} ${startY + 1} ${startZ + 7} {Items:[{Slot:1b,id:"minecraft:coal",Count:64b}]}`)
+            await this.bot.chat(`/setblock ${startX + depth - 3} ${startY + 1} ${startZ + 2} bed`);
+
+            await new Promise(resolve => setTimeout(resolve, 300));
+            return true;
+        } catch (err) {
+            console.error('[CookingTasks] Terjadi error asinkron saat buildHouse:', err);
+            return false;
+        } finally {
+            // FIXED: Wajib selalu menghapus listener di blok finally agar RAM tidak bocor (Memory Leak Guard)
+            this.bot.removeListener('message', permissionListener);
+        }
     }
 }

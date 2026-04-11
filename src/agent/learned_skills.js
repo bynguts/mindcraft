@@ -133,8 +133,18 @@ export class LearnedSkills {
 
             // Delete the physical JS file
             const filePath = path.join(this.dirPath, `${skillName}.js`);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
+            // FIXED: Gunakan try-catch untuk mencegah crash akibat Race Condition antar-agen
+            try {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            } catch (err) {
+                // Abaikan error ENOENT (file sudah terhapus oleh agen lain), log error lainnya
+                if (err.code !== 'ENOENT') {
+                    console.error(`[LearnedSkills] Failed to delete file ${filePath}:`, err);
+                } else {
+                    console.warn(`[LearnedSkills] File ${filePath} already deleted by another process (Race condition mitigated).`);
+                }
             }
 
             // Remove from metadata
@@ -158,7 +168,7 @@ export class LearnedSkills {
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
-    // FIXED: Upgrade dari Lexical Substring ke Semantic Vector Search (Bug #37)
+    // FIXED: Upgrade dari Lexical Substring ke Semantic Vector Search (Bug #37) + Parallel Execution
     async searchRelevantSkills(query) {
         const lowerQuery = query.toLowerCase();
         let results = [];
@@ -175,17 +185,22 @@ export class LearnedSkills {
 
         let metadataChanged = false;
 
-        for (const [skillName, data] of Object.entries(this.metadata)) {
-            let score = 0;
-
-            // 2. Semantic Search Logic (FIXED: Route strictly to vectorCache and add Guard Clause)
-            if (queryEmbedding) {
+        // 2. FIXED: Kumpulkan semua skill yang butuh embedding dan eksekusi secara PARALEL (Performance Patch)
+        if (queryEmbedding) {
+            const skillsToEmbed = [];
+            for (const [skillName, data] of Object.entries(this.metadata)) {
                 if (!this.vectorCache[skillName]) {
                     const tagsText = data.tags ? data.tags.join(' ') : '';
                     const textToEmbed = `${skillName} ${data.description} ${tagsText}`;
+                    skillsToEmbed.push({ skillName, textToEmbed });
+                }
+            }
+
+            if (skillsToEmbed.length > 0) {
+                // Tembak API secara bersamaan menggunakan Promise.all
+                await Promise.all(skillsToEmbed.map(async ({ skillName, textToEmbed }) => {
                     try {
                         const newEmbed = await this.agent.prompter.embedding_model.embed(textToEmbed);
-                        // GUARD CLAUSE: Jangan save ke cache kalau API gagal/down
                         if (newEmbed && Array.isArray(newEmbed) && newEmbed.length > 0) {
                             this.vectorCache[skillName] = newEmbed;
                             metadataChanged = true;
@@ -195,36 +210,43 @@ export class LearnedSkills {
                     } catch (e) {
                         console.warn(`[LearnedSkills] Embedding API failed for '${skillName}':`, e.message);
                     }
-                }
+                }));
+            }
+        }
 
+        // 3. Loop utama sekarang hanya untuk kalkulasi CPU (Sangat Cepat)
+        for (const [skillName, data] of Object.entries(this.metadata)) {
+            let score = 0;
+
+            if (queryEmbedding) {
                 const skillVector = this.vectorCache[skillName];
                 if (skillVector) {
                     score = this.cosineSimilarity(queryEmbedding, skillVector);
                 }
             }
 
-            // 3. Fallback / Hybrid Boost (Lexical Match)
-            const matchTag = data.tags.some(tag => tag.toLowerCase().includes(lowerQuery));
-            const matchDesc = data.description.toLowerCase().includes(lowerQuery);
+            // 4. Fallback / Hybrid Boost (Lexical Match)
+            const matchTag = data.tags && data.tags.some(tag => tag.toLowerCase().includes(lowerQuery));
+            const matchDesc = data.description && data.description.toLowerCase().includes(lowerQuery);
             const matchName = skillName.toLowerCase().includes(lowerQuery);
 
             if (matchTag || matchDesc || matchName) {
                 score += 0.3; // Boost skor kalau string-nya cocok persis
             }
 
-            // 4. Threshold Filter
+            // 5. Threshold Filter
             if (score > 0.75 || matchTag || matchDesc || matchName) {
-                const total = data.success_count + data.fail_count;
-                const rate = total > 0 ? (data.success_count / total) : 1.0;
+                const total = (data.success_count || 0) + (data.fail_count || 0);
+                const rate = total > 0 ? ((data.success_count || 0) / total) : 1.0;
                 results.push({ name: skillName, ...data, rate, total, score });
             }
         }
 
         if (metadataChanged) this.save();
 
-        // 5. Urutkan berdasarkan Skor Semantik tertinggi
+        // 6. Urutkan berdasarkan Skor Semantik tertinggi
         results.sort((a, b) => b.score - a.score || b.rate - a.rate || b.total - a.total);
-        return results.slice(0, 5); // Batasi top 5 skills biar konteks LLM nggak kepenuhan
+        return results.slice(0, 5); // Batasi top 5 skills
     }
 
     // FIXED: Ubah menjadi Async karena pencarian vektor butuh waktu (Bug #37)

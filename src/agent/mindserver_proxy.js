@@ -22,7 +22,15 @@ class MindServerProxy {
         if (this.connected) return;
 
         this.name = name;
-        this.socket = io(`http://127.0.0.1:${port}`);
+
+        // FIXED: Bawa token rahasia agar agen tidak diblokir oleh MindServer (Security Patch)
+        const AUTH_TOKEN = process.env.MINDCRAFT_SECRET || "mindcraft_super_secret_123";
+
+        this.socket = io(`http://127.0.0.1:${port}`, {
+            auth: {
+                token: AUTH_TOKEN
+            }
+        });
 
         await new Promise((resolve, reject) => {
             this.socket.on('connect', resolve);

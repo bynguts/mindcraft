@@ -9,15 +9,16 @@ let lockeddown = false;
 export function lockdown() {
   if (lockeddown) return;
   lockeddown = true;
-  lockdown({
-    // basic devex and quality of life improvements
+
+  // FIXED: Hapus unsafeEval untuk mengunci global eval() dan Function()
+  // Ini mencegah LLM kabur dari Compartment sandbox (Security Patch).
+  // Catatan: Pastikan 'npx patch-package' sudah dijalankan agar protodef tidak error.
+  globalThis.lockdown({
     localeTaming: 'unsafe',
     consoleTaming: 'unsafe',
     errorTaming: 'unsafe',
-    stackFiltering: 'verbose',
-    // allow eval outside of created compartments
-    // (mineflayer dep "protodef" uses eval)
-    evalTaming: 'unsafeEval',
+    stackFiltering: 'verbose'
+    // evalTaming secara default akan menjadi 'safeEval' (aman)
   });
 }
 

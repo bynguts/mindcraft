@@ -1036,17 +1036,24 @@ export async function goToGoal(bot, goal) {
     }
 
     // FIXED: Use try...finally to absolutely guarantee interval cleanup and prevent memory leaks
+    // FIXED: Pindahkan inisialisasi interval ke DALAM blok try agar cleanup terjamin 100%
     let doorCheckInterval = null;
     try {
         doorCheckInterval = startDoorInterval(bot);
         bot.pathfinder.setMovements(final_movements);
+
+        // Panggil pathfinding dan tunggu sampai selesai
         await bot.pathfinder.goto(goal);
         return true;
     } catch (err) {
+        // Logika tambahan opsional: Tangani error pathfinding secara spesifik jika diperlukan
+        console.log(`[Pathfinder] goToGoal failed or interrupted: ${err.message}`);
         throw err;
     } finally {
+        // Blok finally DIJAMIN dieksekusi meskipun ada return atau throw error di atas
         if (doorCheckInterval !== null) {
             clearInterval(doorCheckInterval);
+            doorCheckInterval = null; // Mencegah referensi menggantung
         }
     }
 }

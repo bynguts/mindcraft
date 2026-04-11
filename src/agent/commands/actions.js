@@ -758,11 +758,13 @@ export const actionsList = [
 ];
 
 // FIXED: Encapsulated auto-load logic to prevent module-scope blocking and crashes.
+// FIXED: Encapsulated auto-load logic to prevent module-scope blocking and crashes.
 let skillsLoaded = false;
 
 export function loadSavedSkills() {
-    const saveFolder = './bots/saved_skills/';
-    const metadataPath = `${saveFolder}metadata.json`;
+    // 1. FIXED: Gunakan path.resolve untuk mengunci direktori dasar secara absolut
+    const saveFolder = path.resolve('./bots/saved_skills/');
+    const metadataPath = path.join(saveFolder, 'metadata.json');
     let validSkills = {};
 
     if (fs.existsSync(metadataPath)) {
@@ -777,11 +779,33 @@ export function loadSavedSkills() {
         const files = fs.readdirSync(saveFolder);
         for (const file of files) {
             if (file.endsWith('.js')) {
+                // 2. FIXED: Guard Clause untuk memblokir karakter navigasi berbahaya (Path Traversal)
+                if (file.includes('..') || file.includes('/') || file.includes('\\')) {
+                    console.warn(`[Security] Blocked suspicious skill file name: ${file}`);
+                    continue;
+                }
+
+                // Bangun path absolut yang aman
+                const filePath = path.join(saveFolder, file);
+
+                // 3. FIXED: Validasi akhir bahwa path hasil penggabungan tidak keluar dari saveFolder
+                if (!filePath.startsWith(saveFolder)) {
+                    console.warn(`[Security] Blocked path traversal attempt: ${file}`);
+                    continue;
+                }
+
                 const commandName = file.replace('.js', '');
 
                 if (!validSkills[commandName]) {
-                    console.log(`[Auto-Skill] Deleting orphaned/outdated zombie skill: ${file}`);
-                    fs.unlinkSync(`${saveFolder}${file}`);
+                    console.log(`[Auto-Skill] Attempting to delete orphaned/outdated zombie skill: ${file}`);
+                    // FIXED: Pasang try-catch untuk mencegah crash saat startup jika file terkunci (EBUSY/EPERM)
+                    try {
+                        fs.unlinkSync(filePath);
+                        console.log(`[Auto-Skill] Successfully deleted ${file}`);
+                    } catch (err) {
+                        console.warn(`[Auto-Skill] Warning: Failed to delete ${file}. File might be locked or permission denied. Error: ${err.message}`);
+                        // Biarkan loop berlanjut tanpa menghancurkan startup process
+                    }
                     continue;
                 }
 
@@ -790,7 +814,7 @@ export function loadSavedSkills() {
                     actionsList.splice(existingIndex, 1);
                 }
 
-                // FIXED: Suntikkan dependencies ke dalam description command agar agen tahu syaratnya (Bug #36)
+                // Suntikkan dependencies ke dalam description command agar agen tahu syaratnya (Bug #36)
                 const deps = validSkills[commandName].dependencies;
                 const depsText = deps && deps.length > 0 ? ` [Requires: ${deps.join(', ')}]` : '';
 
@@ -798,7 +822,8 @@ export function loadSavedSkills() {
                     name: `!${commandName}`,
                     description: (validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`) + depsText,
                     perform: runAsAction(async (agent) => {
-                        const src = fs.readFileSync(`${saveFolder}${file}`, 'utf8');
+                        // 4. FIXED: Gunakan filePath yang sudah aman, bukan string concat manual
+                        const src = fs.readFileSync(filePath, 'utf8');
                         const compartment = makeCompartment({
                             skills: skills,
                             log: skills.log,

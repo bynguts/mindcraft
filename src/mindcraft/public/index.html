@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Mindcraft</title>
     <script src="/socket.io/socket.io.js"></script>
@@ -38,15 +39,18 @@
             width: 8px;
             height: 8px;
         }
+
         ::-webkit-scrollbar-track {
-            background: rgba(0,0,0,0.2); 
+            background: rgba(0, 0, 0, 0.2);
         }
+
         ::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.2); 
+            background: rgba(255, 255, 255, 0.2);
             border-radius: 4px;
         }
+
         ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255,255,255,0.3); 
+            background: rgba(255, 255, 255, 0.3);
         }
 
         h1 {
@@ -55,11 +59,13 @@
             font-size: 2rem;
             background: -webkit-linear-gradient(45deg, #60a5fa, #a78bfa);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
             margin: 0;
         }
 
-        h2, h3 {
+        h2,
+        h3 {
             color: var(--text-primary);
             font-weight: 600;
         }
@@ -122,12 +128,19 @@
 
         .agent:hover {
             transform: translateY(-2px);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255,255,255,0.1) inset;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .agent-grid {
@@ -144,10 +157,10 @@
             border-radius: 8px;
             font-size: 0.95em;
             color: var(--text-secondary);
-            border: 1px solid rgba(255,255,255,0.02);
+            border: 1px solid rgba(255, 255, 255, 0.02);
             word-break: break-word;
         }
-        
+
         .agent-grid .cell span {
             color: var(--text-primary);
             font-weight: 500;
@@ -160,7 +173,7 @@
             margin-bottom: 10px;
         }
 
-        .cell.title > span:first-child {
+        .cell.title>span:first-child {
             font-size: 1.4rem;
             font-weight: 600;
             color: var(--text-primary);
@@ -175,7 +188,10 @@
             outline: none;
         }
 
-        .restart-btn, .start-btn, .stop-btn, .neutral-btn {
+        .restart-btn,
+        .start-btn,
+        .stop-btn,
+        .neutral-btn {
             color: white;
             border: none;
             padding: 8px 16px;
@@ -188,18 +204,50 @@
             gap: 6px;
         }
 
-        .restart-btn { background: var(--success); }
-        .restart-btn:hover:not(:disabled) { background: var(--success-hover); transform: translateY(-1px); }
+        .restart-btn {
+            background: var(--success);
+        }
 
-        .start-btn { background: var(--brand-primary); }
-        .start-btn:hover:not(:disabled) { background: var(--brand-primary-hover); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+        .restart-btn:hover:not(:disabled) {
+            background: var(--success-hover);
+            transform: translateY(-1px);
+        }
 
-        .stop-btn { background: var(--danger); }
-        .stop-btn:hover:not(:disabled) { background: var(--danger-hover); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
+        .start-btn {
+            background: var(--brand-primary);
+        }
 
-        .neutral-btn { background: rgba(255, 255, 255, 0.1); }
-        .neutral-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.15); transform: translateY(-1px); }
-        .neutral-btn:disabled { background: rgba(255, 255, 255, 0.05); color: rgba(255,255,255,0.3); cursor: not-allowed; transform: none; }
+        .start-btn:hover:not(:disabled) {
+            background: var(--brand-primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .stop-btn {
+            background: var(--danger);
+        }
+
+        .stop-btn:hover:not(:disabled) {
+            background: var(--danger-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .neutral-btn {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .neutral-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .neutral-btn:disabled {
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.3);
+            cursor: not-allowed;
+            transform: none;
+        }
 
         button:disabled {
             opacity: 0.5;
@@ -218,6 +266,7 @@
             margin-left: 8px;
             font-size: 0.85em;
         }
+
         .gear-btn:hover {
             background: rgba(255, 255, 255, 0.15);
         }
@@ -227,8 +276,14 @@
             margin-right: 8px;
             filter: drop-shadow(0 0 4px currentColor);
         }
-        .status-icon.online { color: var(--success); }
-        .status-icon.offline { color: var(--danger); }
+
+        .status-icon.online {
+            color: var(--success);
+        }
+
+        .status-icon.offline {
+            color: var(--danger);
+        }
 
         .controls-row {
             margin-top: 16px;
@@ -236,7 +291,7 @@
             flex-wrap: wrap;
             gap: 10px;
             align-items: center;
-            background: rgba(0,0,0,0.15);
+            background: rgba(0, 0, 0, 0.15);
             padding: 12px;
             border-radius: 12px;
         }
@@ -278,8 +333,8 @@
             display: flex;
             gap: 16px;
             justify-content: space-between;
-            box-shadow: 0 -4px 30px rgba(0,0,0,0.4);
-            border-top: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.4);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
             z-index: 100;
         }
 
@@ -289,11 +344,11 @@
             aspect-ratio: 16/9;
             overflow: hidden;
             border-radius: 12px;
-            border: 2px solid rgba(255,255,255,0.05);
+            border: 2px solid rgba(255, 255, 255, 0.05);
             background: #000;
             margin-bottom: 12px;
         }
-        
+
         .agent-viewer {
             width: 100%;
             height: 100%;
@@ -308,13 +363,13 @@
             padding: 16px;
             border: 1px solid var(--border);
         }
-        
+
         .agent-inventory h3 {
             margin: 0 0 12px 0;
             font-size: 1.1em;
             color: #fff;
         }
-        
+
         .inventory-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -326,7 +381,7 @@
             color: var(--text-secondary);
             margin-top: 12px;
             padding: 10px 14px;
-            background: rgba(255,255,255,0.02);
+            background: rgba(255, 255, 255, 0.02);
             border-radius: 8px;
             border-left: 3px solid var(--brand-primary);
         }
@@ -334,8 +389,11 @@
         /* Modal styles */
         .modal-backdrop {
             position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
             display: none;
@@ -346,8 +404,13 @@
         }
 
         @keyframes fadeInModal {
-            from { opacity: 0; }
-            to { opacity: 1; }
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
         }
 
         .modal {
@@ -366,7 +429,9 @@
         }
 
         @keyframes scaleInModal {
-            to { transform: scale(1); }
+            to {
+                transform: scale(1);
+            }
         }
 
         .modal-header {
@@ -375,13 +440,13 @@
             justify-content: space-between;
             padding: 20px 24px;
             border-bottom: 1px solid var(--border);
-            background: rgba(255,255,255,0.03);
+            background: rgba(255, 255, 255, 0.03);
         }
-        
+
         .modal-header h2 {
             margin: 0;
         }
-        
+
         .modal-close-btn {
             background: rgba(255, 255, 255, 0.1);
             color: var(--text-primary);
@@ -395,7 +460,7 @@
             cursor: pointer;
             transition: all 0.2s;
         }
-        
+
         .modal-close-btn:hover {
             background: rgba(255, 255, 255, 0.2);
             transform: rotate(90deg);
@@ -413,9 +478,9 @@
             justify-content: space-between;
             padding: 16px 24px;
             border-top: 1px solid var(--border);
-            background: rgba(255,255,255,0.03);
+            background: rgba(255, 255, 255, 0.03);
         }
-        
+
         .footer-left {
             color: var(--text-secondary);
             font-size: 0.9em;
@@ -426,7 +491,8 @@
             gap: 12px;
         }
 
-        #settingsForm, #agentSettingsForm {
+        #settingsForm,
+        #agentSettingsForm {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 16px;
@@ -462,7 +528,7 @@
             box-sizing: border-box;
             transition: all 0.3s;
         }
-        
+
         .setting-wrapper input[type="text"]:focus,
         .setting-wrapper input[type="number"]:focus {
             outline: none;
@@ -477,7 +543,7 @@
             cursor: pointer;
             margin-top: 4px;
         }
-        
+
         .setting-wrapper:has(input[type="checkbox"]) {
             flex-direction: row;
             align-items: center;
@@ -496,6 +562,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="title-row">
         <div class="title-left">
@@ -532,7 +599,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <div class="footer-left" id="footerStatus">Configure settings, then upload a profile and create the agent.</div>
+                <div class="footer-left" id="footerStatus">Configure settings, then upload a profile and create the
+                    agent.</div>
                 <div class="footer-actions">
                     <button id="uploadProfileBtn" class="start-btn">Upload Profile</button>
                     <button id="submitCreateAgentBtn" class="start-btn" disabled>Create Agent</button>
@@ -557,7 +625,8 @@
             <div class="modal-footer">
                 <div class="footer-left" id="agentSettingsFooter">Modify settings then apply to restart the agent.</div>
                 <div class="footer-actions">
-                    <button id="discardAgentSettingsBtn" class="stop-btn" style="background:#777;">Discard Changes</button>
+                    <button id="discardAgentSettingsBtn" class="stop-btn" style="background:#777;">Discard
+                        Changes</button>
                     <button id="applyAgentSettingsBtn" class="start-btn" disabled>Apply & Restart</button>
                 </div>
             </div>
@@ -565,7 +634,14 @@
     </div>
 
     <script>
-        const socket = io({ path: window.location.pathname + 'socket.io' })
+        // FIXED: Kirim kredensial agar Web UI tidak diblokir Mindserver (Security Patch)
+        const AUTH_TOKEN = "mindcraft_super_secret_123"; // Harus sama persis dengan server
+        const socket = io({
+            path: window.location.pathname + 'socket.io',
+            auth: {
+                token: AUTH_TOKEN
+            }
+        });
         const agentsDiv = document.getElementById('agents');
         let settingsSpec = {};
         let profileData = null;
@@ -1095,7 +1171,7 @@
 
         function restartAgent(n) { socket.emit('restart-agent', n); }
         function disconnectAgent(n) { socket.emit('stop-agent', n); }
-        function startAgent(n) { 
+        function startAgent(n) {
             const btn = document.querySelector(`button[onclick="startAgent('${n}')"]`);
             if (btn) {
                 btn.textContent = 'Connecting...';
@@ -1115,8 +1191,8 @@
         }
         function stopAgent(n) { socket.emit('stop-agent', n); }
         function destroyAgent(n) { socket.emit('destroy-agent', n); }
-        function disconnectAllAgents() { 
-            socket.emit('stop-all-agents'); 
+        function disconnectAllAgents() {
+            socket.emit('stop-all-agents');
         }
         function confirmShutdown() {
             if (confirm('Are you sure you want to perform a full shutdown?\nThis will stop all agents and close the server.')) {
@@ -1150,4 +1226,5 @@
         window.toggleDetails = toggleDetails;
     </script>
 </body>
-</html> 
+
+</html>

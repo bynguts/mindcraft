@@ -68,6 +68,17 @@ export class Coder {
             }
             code = res.substring(res.indexOf('```') + 3, res.lastIndexOf('```'));
             const result = await this._stageCode(code);
+
+            // FIXED: Mencegah Null Pointer Dereference saat _stageCode gagal / LLM halusinasi
+            if (!result) {
+                console.warn("[Coder] _stageCode mengembalikan null. Syntax invalid atau error sistem.");
+                messages.push({
+                    role: 'system',
+                    content: 'Error: Failed to stage code. The syntax might be invalid. Please check your code and try again.'
+                });
+                continue; // Skip eksekusi ke bawah dan biarkan LLM mencoba memperbaiki kodenya
+            }
+
             const executionModule = result.func;
             const lintResult = await this._lintCode(result.src_lint_copy);
             if (lintResult) {

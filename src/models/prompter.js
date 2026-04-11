@@ -9,12 +9,10 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { selectAPI, createModel } from './_model_map.js';
+import { serverProxy } from '../agent/mindserver_proxy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// FIXED: Global tracker to queue API requests across all agent instances
-let global_next_available_time = Date.now();
 
 export class Prompter {
     constructor(agent, profile) {
@@ -134,16 +132,36 @@ export class Prompter {
     }
 
     async replaceStrings(prompt, messages, examples = null, to_summarize = [], last_goals = null) {
+        // FIXED: Implementasi TTL Cache untuk mencegah redundant CPU-heavy world queries
+        // Memastikan komputasi state yang sama tidak diulang berkali-kali dalam satu tick obrolan (Performance Patch)
+        if (!this.stringCache) this.stringCache = {};
+        const now = Date.now();
+
+        const getCached = async (key, ttl_ms, fetcher) => {
+            if (this.stringCache[key] && (now - this.stringCache[key].time < ttl_ms)) {
+                return this.stringCache[key].value;
+            }
+            const val = await fetcher();
+            this.stringCache[key] = { time: now, value: val };
+            return val;
+        };
+
         prompt = prompt.replaceAll('$NAME', this.agent.name);
 
         if (prompt.includes('$STATS')) {
-            let stats = await getCommand('!stats').perform(this.agent) + '\n';
-            stats += await getCommand('!entities').perform(this.agent) + '\n';
-            stats += await getCommand('!nearbyBlocks').perform(this.agent);
+            let stats = await getCached('stats', 2000, async () => {
+                let s = await getCommand('!stats').perform(this.agent) + '\n';
+                s += await getCommand('!entities').perform(this.agent) + '\n';
+                s += await getCommand('!nearbyBlocks').perform(this.agent); // Ini yang bikin berat!
+                return s;
+            });
             prompt = prompt.replaceAll('$STATS', stats);
         }
+
         if (prompt.includes('$INVENTORY')) {
-            let inventory = await getCommand('!inventory').perform(this.agent);
+            let inventory = await getCached('inventory', 2000, async () => {
+                return await getCommand('!inventory').perform(this.agent);
+            });
             prompt = prompt.replaceAll('$INVENTORY', inventory);
         }
         if (prompt.includes('$ACTION')) {
@@ -223,32 +241,23 @@ export class Prompter {
     }
 
     async checkCooldown() {
-        // FIXED: Implemented Global Request Queueing for Multi-Agent coordination.
-        // Prevents API 429 Rate Limit crashes by forcing agents to claim distinct time slots.
-        const minWait = this.cooldown > 0 ? this.cooldown : 2000;
-        let sleepTime = 0;
+        // FIXED: Revert back to local agent throttling to prevent massive multi-agent delays (Performance Patch)
+        // Default cooldown: 1000ms (1s) safety floor per agent, or whatever is set in the profile
+        const minWait = this.cooldown > 0 ? this.cooldown : 1000;
+        const currentTime = Date.now();
+        const elapsed = currentTime - this.last_prompt_time;
 
-        const now = Date.now();
-
-        // Fast-forward the global queue if no one has requested anything recently
-        if (global_next_available_time < now) {
-            global_next_available_time = now;
-        }
-
-        // Calculate how long THIS specific agent needs to wait in the global line
-        if (global_next_available_time > now) {
-            sleepTime = global_next_available_time - now;
-        }
-
-        // Synchronously claim the slot so the next agent is pushed further back
-        global_next_available_time += minWait;
-
-        if (sleepTime > 0) {
-            console.log(`[Prompter] Global throttle: Queuing request for ${sleepTime}ms to prevent API rate limits...`);
+        if (elapsed < minWait) {
+            const sleepTime = minWait - elapsed;
+            // Hanya log jika sleepTime cukup signifikan agar console tidak terlalu spam
+            if (sleepTime > 100) {
+                console.log(`[Prompter] Throttling local request: Waiting ${sleepTime}ms...`);
+            }
             await new Promise(r => setTimeout(r, sleepTime));
         }
 
-        this.last_prompt_time = Date.now(); // Keep local tracker updated
+        // Catat waktu SETELAH sleep selesai agar agent ini baru bisa request lagi 1 detik kemudian
+        this.last_prompt_time = Date.now();
     }
 
     async promptConvo(messages) {
@@ -276,12 +285,26 @@ export class Prompter {
 
             } catch (error) {
                 console.error('Error during message generation or file writing:', error);
+
+                // FIXED: Tambahkan Exponential Backoff untuk mencegah spam Rate Limit (Bug #43)
+                if (i < 2) { // Jangan delay di percobaan terakhir
+                    const backoffTime = 2000 * Math.pow(2, i); // 2s, 4s
+                    console.warn(`[Prompter] API Error/Rate Limit. Retrying in ${backoffTime}ms... (Attempt ${i + 1}/3)`);
+                    await new Promise(resolve => setTimeout(resolve, backoffTime));
+                }
                 continue;
             }
 
             // Check for hallucination or invalid output
             if (generation?.includes('(FROM OTHER BOT)')) {
                 console.warn('LLM hallucinated message as another bot. Trying again...');
+
+                // FIXED: Opsional Backoff untuk halusinasi agar AI punya waktu "bernapas" dan tidak mengulang output yang sama persis di milidetik yang sama
+                if (i < 2) {
+                    const backoffTime = 1000 * Math.pow(2, i); // 1s, 2s
+                    console.warn(`[Prompter] Hallucination detected. Retrying in ${backoffTime}ms... (Attempt ${i + 1}/3)`);
+                    await new Promise(resolve => setTimeout(resolve, backoffTime));
+                }
                 continue;
             }
 
@@ -292,7 +315,7 @@ export class Prompter {
 
             if (generation?.includes('</think>')) {
                 const [_, afterThink] = generation.split('</think>')
-                generation = afterThink
+                generation = afterThink.trim();
             }
 
             return generation;

@@ -157,7 +157,7 @@ export class Agent {
                 }
 
                 await new Promise((resolve) => setTimeout(resolve, 10000));
-                this.checkAllPlayersPresent();
+                await this.checkAllPlayersPresent(); // FIXED: Tambahin await di sini
 
             } catch (error) {
                 console.error('Error in spawn event:', error);
@@ -200,12 +200,21 @@ export class Agent {
 
             const currentMsg = `${username}:${message}`;
             const currentTime = Date.now();
-            if (currentMsg === this.lastMessageContent && (currentTime - this.lastMessageTime) < 500) {
+
+            // FIXED: Rate Limiter ketat untuk mencegah spam yang membakar kuota API
+            // 1. Abaikan pesan duplikat (sama persis) dalam 5 detik terakhir
+            if (currentMsg === this.lastMessageContent && (currentTime - this.lastMessageTime) < 5000) {
+                return;
+            }
+            // 2. Abaikan pesan APAPUN dari siapapun jika jaraknya kurang dari 1.5 detik (Throttle)
+            if (this.lastAnyMessageTime && (currentTime - this.lastAnyMessageTime) < 1500) {
+                console.warn(`[Rate Limit] Membuang pesan beruntun dari ${username} untuk mengamankan kuota API.`);
                 return;
             }
 
             this.lastMessageContent = currentMsg;
             this.lastMessageTime = currentTime;
+            this.lastAnyMessageTime = currentTime;
 
             // --- DISCORD CLEANER OPERATION ---
             // Use the DRY helper method
@@ -288,16 +297,31 @@ export class Agent {
         }
     }
 
-    checkAllPlayersPresent() {
+    async checkAllPlayersPresent() {
         if (!this.task || !this.task.agent_names) {
-            return;
+            return true;
         }
 
-        const missingPlayers = this.task.agent_names.filter(name => !this.bot.players[name]);
-        if (missingPlayers.length > 0) {
-            console.log(`Missing players/bots: ${missingPlayers.join(', ')}`);
-            this.cleanKill('Not all required players/bots are present in the world. Exiting.', 4);
+        const maxRetries = 15; // Coba ngecek 15 kali
+        const delayMs = 2000;  // Jeda 2 detik tiap ngecek (Total nunggu 30 detik)
+
+        for (let i = 0; i < maxRetries; i++) {
+            const missingPlayers = this.task.agent_names.filter(name => !this.bot.players[name]);
+
+            if (missingPlayers.length === 0) {
+                if (i > 0) console.log(`[System] Semua pemain/bot lengkap setelah menunggu ${i * 2} detik!`);
+                return true; // Semua hadir, lolos!
+            }
+
+            console.log(`[System] Menunggu pemain/bot lain spawn: ${missingPlayers.join(', ')}... (Attempt ${i + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, delayMs)); // Tunggu 2 detik
         }
+
+        // Kalau udah 30 detik tetep hilang, eksekusi mati
+        const finalMissing = this.task.agent_names.filter(name => !this.bot.players[name]);
+        console.log(`[System] Timeout! Missing players/bots: ${finalMissing.join(', ')}`);
+        this.cleanKill('Not all required players/bots are present in the world. Exiting.', 4);
+        return false;
     }
 
     requestInterrupt() {
