@@ -315,7 +315,9 @@ export const queryList = [
             'query': { type: 'string', description: 'The query to search for.' }
         },
         perform: async function (agent, query) {
-            const url = `https://minecraft.wiki/w/${query}`
+            const safeQuery = encodeURIComponent(query.trim());
+            const url = `https://minecraft.wiki/w/${safeQuery}`;
+
             try {
                 const response = await fetch(url);
                 if (response.status === 404) {

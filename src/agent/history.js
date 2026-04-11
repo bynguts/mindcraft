@@ -61,14 +61,19 @@ export class History {
     }
 
     async appendFullHistory(to_store) {
-
         if (!this._historyBuffer) {
             this._historyBuffer = [];
             this._lastFlushTime = Date.now();
         }
 
-
         this._historyBuffer.push(...to_store);
+
+        if (this._historyBuffer.length > 100) {
+            const overflow = this._historyBuffer.length - 100;
+
+            this._historyBuffer = this._historyBuffer.slice(-100);
+            console.warn(`[History 🚨] I/O blocked! Discarding ${overflow} oldest messages from queue to protect agent ${this.name}'s RAM.`);
+        }
 
         const now = Date.now();
 

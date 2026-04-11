@@ -828,10 +828,8 @@ export function loadSavedSkills() {
                     const safeFileName = path.basename(file);
                     const rawPath = path.join(saveFolder, safeFileName);
 
-
                     const filePath = fs.realpathSync(rawPath);
                     const normalizedBase = fs.realpathSync(saveFolder);
-
 
                     if (!filePath.startsWith(normalizedBase)) {
                         console.warn(`[Security] Blocked symlink or path traversal attempt: ${file}`);
@@ -863,9 +861,6 @@ export function loadSavedSkills() {
                         name: `!${commandName}`,
                         description: (validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`) + depsText,
                         perform: runAsAction(async (agent) => {
-
-                            const src = fs.readFileSync(filePath, 'utf8');
-                            // Panggil helper tunggal
                             await executeSkillSandbox(commandName, src, agent);
                         })
                     };
