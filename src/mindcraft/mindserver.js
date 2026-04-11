@@ -85,12 +85,13 @@ export function createMindServer(host_public = false, port = 8080) {
     // Keamanan Socket.io sekarang mengambil token dari Cookie, BUKAN dari Javascript
     io.use((socket, next) => {
         const cookies = parseCookies(socket.request.headers.cookie);
+        const cookieAuth = cookies.mindcraft_session === AUTH_TOKEN && !!AUTH_TOKEN;
+        const tokenAuth = socket.handshake.auth?.token === AUTH_TOKEN && !!AUTH_TOKEN;
 
-        if (cookies.mindcraft_session === AUTH_TOKEN && AUTH_TOKEN) {
+        if (cookieAuth || tokenAuth) {
             return next();
         }
-
-        console.warn(`[Security] Blocked unauthorized connection attempt from IP: ${socket.handshake.address}`);
+        console.warn(`[Security] Blocked unauthorized connection from: ${socket.handshake.address}`);
         return next(new Error("Authentication error: Access Denied"));
     });
 
