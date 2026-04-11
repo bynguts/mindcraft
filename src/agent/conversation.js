@@ -1,6 +1,7 @@
 import settings from './settings.js';
 import { containsCommand } from './commands/index.js';
 import { sendBotChatToServer } from './mindserver_proxy.js';
+import { TIMEOUTS } from '../utils/constants.js';
 
 let agent;
 let agent_names = [];
@@ -273,7 +274,7 @@ The logic is as follows:
 */
 const talkOverActions = ['stay', 'followPlayer', 'mode:']; // all mode actions
 const fastDelay = 200;
-const longDelay = 5000;
+const longDelay = TIMEOUTS.CONVERSATION_DELAY;
 async function _scheduleProcessInMessage(sender, received, convo) {
     if (convo.inMessageTimer)
         clearTimeout(convo.inMessageTimer);
@@ -350,7 +351,7 @@ function _tagMessage(message) {
 }
 
 async function _resumeSelfPrompter() {
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CONVERSATION_DELAY));
     if (agent.self_prompter.isPaused() && !convoManager.inConversation()) {
         agent.self_prompter.start();
     }

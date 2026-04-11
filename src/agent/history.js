@@ -67,20 +67,48 @@ export class History {
     }
 
     async appendFullHistory(to_store) {
+        // FIXED: Inisialisasi Buffer di memori
+        if (!this._historyBuffer) {
+            this._historyBuffer = [];
+            this._lastFlushTime = Date.now();
+        }
+
+        // Tumpuk data di memori, JANGAN langsung I/O ke disk
+        this._historyBuffer.push(...to_store);
+
+        const now = Date.now();
+        // Flush (Tulis ke disk) HANYA JIKA: ada >= 50 pesan di buffer, ATAU sudah lewat 60 detik
+        if (this._historyBuffer.length >= 50 || now - this._lastFlushTime > 60000) {
+            await this.flushHistory();
+        }
+    }
+
+    // FIXED: Fungsi baru untuk Bulk Write meminimalisir Bottleneck I/O (Performa Multi-Agent)
+    async flushHistory() {
+        if (!this._historyBuffer || this._historyBuffer.length === 0) return;
+
         if (this.full_history_fp === undefined) {
             const string_timestamp = new Date().toLocaleString().replace(/[/:]/g, '-').replace(/ /g, '').replace(/,/g, '_');
             this.full_history_fp = `./bots/${this.name}/histories/${string_timestamp}.json`;
-            // FIXED: Non-blocking I/O
             await fsPromises.writeFile(this.full_history_fp, '[]', 'utf8');
         }
+
         try {
-            // FIXED: Non-blocking I/O untuk file besar
+            // Baca, tambah, tulis 1x saja untuk puluhan pesan
             const data = await fsPromises.readFile(this.full_history_fp, 'utf8');
             let full_history = JSON.parse(data);
-            full_history.push(...to_store);
+
+            full_history.push(...this._historyBuffer);
+
             await fsPromises.writeFile(this.full_history_fp, JSON.stringify(full_history, null, 4), 'utf8');
+
+            // Kosongkan buffer setelah sukses
+            const writtenCount = this._historyBuffer.length;
+            this._historyBuffer = [];
+            this._lastFlushTime = Date.now();
+            console.log(`[History] Flushed ${writtenCount} buffered messages to disk for ${this.name}`);
         } catch (err) {
-            console.error(`Error reading ${this.name}'s full history file: ${err.message}`);
+            console.error(`Error flushing ${this.name}'s full history file: ${err.message}`);
         }
     }
 
@@ -121,6 +149,13 @@ export class History {
             // FIXED: Gunakan asynchronous writeFile untuk mencegah blocking event loop
             await fsPromises.writeFile(this.memory_fp, JSON.stringify(data, null, 2));
             console.log('Saved memory to:', this.memory_fp);
+
+            if (this._historyBuffer && this._historyBuffer.length > 0) {
+                if (Date.now() - (this._lastFlushTime || 0) > 15000) {
+                    await this.flushHistory();
+                }
+            }
+
         } catch (error) {
             console.error('Failed to save history:', error);
             throw error;

@@ -327,57 +327,268 @@ export class Blueprint {
  * @param startCoord an array of the x,y,z coordinates to create the blueprint. default = [148,-60,-170]
  * @returns a blueprint object
  */
-export function proceduralGeneration(m = 20,
-    n = 20,
-    p = 20,
-    rooms = 8,
-    minRoomWidth = 5,
-    minRoomLength = 5,
-    minRoomDepth = 6,
-    roomVariance = 5,
-    wrapping = "air",
-    carpetStyle = 1,
-    windowStyle = 1,
-    complexity = 4,
-    startCoord = [148, -60, -170]) {
-    // Build 3D space
-    const matrix = Array.from({ length: p }, () =>
-        Array.from({ length: m }, () =>
-            Array(n).fill('air')
-        )
-    );
+// --- REFACTOR: Modular Generation & Embellishment Helpers ---
 
-    // todo: extrapolate into another param? then have set materials be dynamic? 
-    let roomMaterials = ["stone", "terracotta", "quartz_block", "copper_block", "purpur_block"]
+const directionChances = [
+    { direction: 'above', chance: 0.15 },
+    { direction: 'left', chance: 0.15 },
+    { direction: 'right', chance: 0.15 },
+    { direction: 'forward', chance: 0.15 },
+    { direction: 'backward', chance: 0.15 },
+];
 
-    if (complexity < roomMaterials.length) {
-        roomMaterials = roomMaterials.slice(0, complexity + 1);
+function getRandomDirection() {
+    const rand = Math.random();
+    let cumulative = 0;
+    for (const { direction, chance } of directionChances) {
+        cumulative += chance;
+        if (rand <= cumulative) return direction;
+    }
+    return directionChances[1].direction; // Fallback to 'left'
+}
+
+function isSpaceValid(matrix, newX, newY, newZ, newLength, newWidth, newDepth) {
+    for (let di = 0; di < newDepth; di++) {
+        for (let dj = 0; dj < newLength; dj++) {
+            for (let dk = 0; dk < newWidth; dk++) {
+                const x = newX + dj;
+                const y = newY + dk;
+                const z = newZ + di;
+
+                if (dj === 0 || dj === newLength - 1 || dk === 0 || dk === newWidth - 1 || di === 0 || di === newDepth - 1) {
+                    continue;
+                }
+                if (matrix[z][x][y] !== 'air') {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+function validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material) {
+    if (
+        newX >= 0 && newX + newLength <= m &&
+        newY >= 0 && newY + newWidth <= n &&
+        newZ >= 0 && newZ + newDepth <= p &&
+        isSpaceValid(matrix, newX, newY, newZ, newLength, newWidth, newDepth)
+    ) {
+        for (let di = 0; di < newDepth; di++) {
+            for (let dj = 0; dj < newLength; dj++) {
+                for (let dk = 0; dk < newWidth; dk++) {
+                    const x = newX + dj;
+                    const y = newY + dk;
+                    const z = newZ + di;
+
+                    if (z === 0) continue;
+
+                    if (di === 0 && matrix[z - 1][x][y] !== 'air') {
+                        matrix[z][x][y] = 'air';
+                    } else if (di === 0 || di === newDepth - 1 || dj === 0 || dj === newLength - 1 || dk === 0 || dk === newWidth - 1) {
+                        matrix[z][x][y] = material;
+                    } else {
+                        matrix[z][x][y] = 'air';
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+function addDoor(matrix, x, y, z, material) {
+    matrix[z][x][y] = material;
+    matrix[z + 1][x][y] = 'dark_oak_door';
+    matrix[z + 2][x][y] = 'dark_oak_door';
+}
+
+function addWindowsAsSquares(matrix, x, y, z, newLength, newWidth, newDepth, material, minRoomWidth, minRoomLength, minRoomDepth) {
+    const matrixDepth = matrix.length;
+    const matrixLength = matrix[0].length;
+    const matrixWidth = matrix[0][0].length;
+    const windowX = Math.ceil(minRoomWidth / 2);
+    const windowY = Math.ceil(minRoomLength / 2);
+    const windowZ = Math.ceil(minRoomDepth / 2);
+
+    function isInBounds(bz, bx, by) {
+        return bz >= 0 && bz < matrixDepth && bx >= 0 && bx < matrixLength && by >= 0 && by < matrixWidth;
     }
 
-    // Mark entire outer border with 'stone'
-    for (let z = 0; z < p; z++) {
-        for (let x = 0; x < m; x++) {
-            for (let y = 0; y < n; y++) {
-                if (
-                    z === 0 || z === p - 1 || // Top and bottom faces
-                    x === 0 || x === m - 1 || // Front and back faces
-                    y === 0 || y === n - 1    // Left and right faces
-                ) {
-                    matrix[z][x][y] = 'stone';
+    if (Math.random() < 0.8) {
+        let centerX = x + Math.floor(newLength / 2 - windowX / 2);
+        let centerY = y + Math.floor(newWidth / 2 - windowY / 2);
+        for (let dx = 0; dx <= windowX; dx++) {
+            for (let dy = 0; dy <= windowY; dy++) {
+                let frontZ = z;
+                let backZ = z + newDepth - 1;
+                if (isInBounds(frontZ, centerX + dx, centerY + dy) && matrix[frontZ][centerX + dx][centerY + dy] === material) matrix[frontZ][centerX + dx][centerY + dy] = 'glass';
+                if (isInBounds(backZ, centerX + dx, centerY + dy) && matrix[backZ][centerX + dx][centerY + dy] === material) matrix[backZ][centerX + dx][centerY + dy] = 'glass';
+            }
+        }
+    }
+
+    if (Math.random() < 0.8) {
+        let centerZ = z + Math.floor(newDepth / 2 - windowZ / 2);
+        let centerY = y + Math.floor(newWidth / 2 - windowY / 2);
+        for (let dz = 0; dz <= windowZ; dz++) {
+            for (let dy = 0; dy <= windowY; dy++) {
+                let leftX = x;
+                let rightX = x + newLength - 1;
+                if (isInBounds(centerZ + dz, leftX, centerY + dy) && matrix[centerZ + dz][leftX][centerY + dy] === material) matrix[centerZ + dz][leftX][centerY + dy] = 'glass';
+                if (isInBounds(centerZ + dz, rightX, centerY + dy) && matrix[centerZ + dz][rightX][centerY + dy] === material) matrix[centerZ + dz][rightX][centerY + dy] = 'glass';
+            }
+        }
+    }
+
+    if (Math.random() < 0.8) {
+        let centerX = x + Math.floor(newLength / 2 - windowX / 2);
+        let centerZ = z + Math.floor(newDepth / 2 - windowZ / 2);
+        for (let dx = 0; dx <= windowX; dx++) {
+            for (let dz = 0; dz <= windowZ; dz++) {
+                let bottomY = y;
+                let topY = y + newWidth - 1;
+                if (isInBounds(centerZ + dz, centerX + dx, bottomY) && matrix[centerZ + dz][centerX + dx][bottomY] === material) matrix[centerZ + dz][centerX + dx][bottomY] = 'glass';
+                if (isInBounds(centerZ + dz, centerX + dx, topY) && matrix[centerZ + dz][centerX + dx][topY] === material) matrix[centerZ + dz][centerX + dx][topY] = 'glass';
+            }
+        }
+    }
+}
+
+function addWindowsAsPlane(matrix, x, y, z, newLength, newWidth, newDepth, material) {
+    const maxX = matrix[0].length;
+    const maxY = matrix[0][0].length;
+    const maxZ = matrix.length;
+
+    if (Math.random() < 0.8) {
+        for (let dx = 0; dx < newLength; dx++) {
+            for (let dy = 0; dy < newWidth; dy++) {
+                let frontZ = z;
+                let backZ = z + newDepth - 1;
+                if (frontZ >= 0 && frontZ < maxZ && x + dx >= 0 && x + dx < maxX && y + dy >= 0 && y + dy < maxY) {
+                    if (matrix[frontZ][x + dx][y + dy] === material) matrix[frontZ][x + dx][y + dy] = 'glass';
+                }
+                if (backZ >= 0 && backZ < maxZ && x + dx >= 0 && x + dx < maxX && y + dy >= 0 && y + dy < maxY) {
+                    if (matrix[backZ][x + dx][y + dy] === material) matrix[backZ][x + dx][y + dy] = 'glass';
                 }
             }
         }
     }
 
-    // Replace outer layer with wrap
+    if (Math.random() < 0.8) {
+        for (let dz = 0; dz < newDepth; dz++) {
+            for (let dy = 0; dy < newWidth; dy++) {
+                let leftX = x;
+                let rightX = x + newLength - 1;
+                if (leftX >= 0 && leftX < maxX && z + dz >= 0 && z + dz < maxZ && y + dy >= 0 && y + dy < maxY) {
+                    if (matrix[z + dz][leftX][y + dy] === material) matrix[z + dz][leftX][y + dy] = 'glass';
+                }
+                if (rightX >= 0 && rightX < maxX && z + dz >= 0 && z + dz < maxZ && y + dy >= 0 && y + dy < maxY) {
+                    if (matrix[z + dz][rightX][y + dy] === material) matrix[z + dz][rightX][y + dy] = 'glass';
+                }
+            }
+        }
+    }
+}
+
+function addStairs(matrix, x, y, z, length, width, material) {
+    let currentZ = z;
+    let currentX = x + 1;
+    let currentY = y + 1;
+    let direction = 0;
+    let stepCount = 0;
+    const maxSteps = length * width;
+
+    while (currentZ >= 0 && currentX < x + length - 1 && currentY < y + width - 1 && stepCount < maxSteps) {
+        matrix[currentZ][currentX][currentY] = material || 'stone';
+        for (let i = 1; i <= 3; i++) {
+            if (currentZ + i < matrix.length) {
+                matrix[currentZ + i][currentX][currentY] = 'air';
+            }
+        }
+        if (direction === 0) {
+            currentX++;
+            if (currentX >= x + length - 1) {
+                currentX = x + length - 2;
+                direction = 1;
+            } else {
+                currentZ--;
+            }
+        } else {
+            currentY++;
+            if (currentY >= y + width - 1) {
+                currentY = y + width - 2;
+                direction = 0;
+            } else {
+                currentZ--;
+            }
+        }
+        stepCount++;
+    }
+}
+
+function addCarpet(probability, matrix, newX, newY, newZ, newLength, newWidth, material) {
+    let colors = ["blue", "cyan", "light_blue", "lime"];
+    for (let dx = 1; dx < newLength - 1; dx++) {
+        for (let dy = 1; dy < newWidth - 1; dy++) {
+            let x = newX + dx;
+            let y = newY + dy;
+            let z = newZ;
+            if (matrix[z][x][y] === material) {
+                if (Math.random() < probability) {
+                    let randomColor = colors[Math.floor(Math.random() * colors.length)];
+                    matrix[z + 1][x][y] = `${randomColor}_carpet`;
+                }
+            }
+        }
+    }
+}
+
+function addLadder(matrix, x, y, z) {
+    let currentZ = z + 1;
+    matrix[currentZ][x + 1][y] = 'air';
+    for (let i = 0; i < 3; i++) {
+        matrix[currentZ][x - 1][y] = 'stone';
+        matrix[currentZ][x][y] = 'ladder[facing=north]';
+        currentZ -= 1;
+    }
+    while (currentZ >= 0 && matrix[currentZ][x][y] === 'air') {
+        matrix[currentZ][x - 1][y] = 'stone';
+        matrix[currentZ][x][y] = 'ladder[facing=north]';
+        currentZ--;
+    }
+}
+
+function embellishments(carpet, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material, minRoomWidth, minRoomLength, minRoomDepth) {
+    switch (windowStyle) {
+        case 0: break;
+        case 1: addWindowsAsSquares(matrix, newX, newY, newZ, newLength, newWidth, newDepth, material, minRoomWidth, minRoomLength, minRoomDepth); break;
+        case 2: addWindowsAsPlane(matrix, newX, newY, newZ, newLength, newWidth, newDepth, material); break;
+    }
+
+    switch (carpet) {
+        case 0: break;
+        case 1: addCarpet(0.3, matrix, newX, newY, newZ, newLength, newWidth, material); break;
+        case 2: addCarpet(0.7, matrix, newX, newY, newZ, newLength, newWidth, material); break;
+    }
+}
+
+export function proceduralGeneration(m = 20, n = 20, p = 20, rooms = 8, minRoomWidth = 5, minRoomLength = 5, minRoomDepth = 6, roomVariance = 5, wrapping = "air", carpetStyle = 1, windowStyle = 1, complexity = 4, startCoord = [148, -60, -170]) {
+
+    // Build 3D space
+    const matrix = Array.from({ length: p }, () => Array.from({ length: m }, () => Array(n).fill('air')));
+    let roomMaterials = ["stone", "terracotta", "quartz_block", "copper_block", "purpur_block"];
+    if (complexity < roomMaterials.length) roomMaterials = roomMaterials.slice(0, complexity + 1);
+
+    // Mark entire outer border with 'stone' then replace outer layer with wrap
     for (let z = 0; z < p; z++) {
         for (let x = 0; x < m; x++) {
             for (let y = 0; y < n; y++) {
-                if (
-                    (z === p - 1 || // Top face
-                        x === 0 || x === m - 1 || // Front and back faces
-                        y === 0 || y === n - 1) // Left and right faces
-                ) {
+                if (z === 0 || z === p - 1 || x === 0 || x === m - 1 || y === 0 || y === n - 1) {
+                    matrix[z][x][y] = 'stone';
+                }
+                if (z === p - 1 || x === 0 || x === m - 1 || y === 0 || y === n - 1) {
                     matrix[z][x][y] = wrapping;
                 }
             }
@@ -387,385 +598,12 @@ export function proceduralGeneration(m = 20,
     let placedRooms = 0;
     let lastRoom = null;
 
-    // Direction probabilities (e.g., 'above': 40%, 'left': 15%, etc.)
-    const directionChances = [
-        { direction: 'above', chance: 0.15 },
-        { direction: 'left', chance: 0.15 },
-        { direction: 'right', chance: 0.15 },
-        { direction: 'forward', chance: 0.15 },
-        { direction: 'backward', chance: 0.15 },
-    ];
-
-    // Function to pick a random direction based on percentages
-    function getRandomDirection() {
-        const rand = Math.random();
-        let cumulative = 0;
-
-        for (const { direction, chance } of directionChances) {
-            cumulative += chance;
-            if (rand <= cumulative) return direction;
-        }
-        return directionChances[1].direction; // Fallback to the first direction
-    }
-
-    // Ensures no rooms overlap except at edges
-    function isSpaceValid(newX, newY, newZ, newLength, newWidth, newDepth) {
-        for (let di = 0; di < newDepth; di++) {
-            for (let dj = 0; dj < newLength; dj++) {
-                for (let dk = 0; dk < newWidth; dk++) {
-                    const x = newX + dj;
-                    const y = newY + dk;
-                    const z = newZ + di;
-
-                    // Skip checking the outermost borders of the new room (these can overlap with stone)
-                    if (dj === 0 || dj === newLength - 1 ||
-                        dk === 0 || dk === newWidth - 1 ||
-                        di === 0 || di === newDepth - 1) {
-                        continue;
-                    }
-
-                    // For non-border spaces, ensure they're air
-                    if (matrix[z][x][y] !== 'air') {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
-    }
-
-    function validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material) {
-        // Allow rooms to use the matrix edges (note the <= instead of <)
-        if (
-            newX >= 0 && newX + newLength <= m &&
-            newY >= 0 && newY + newWidth <= n &&
-            newZ >= 0 && newZ + newDepth <= p &&
-            isSpaceValid(newX, newY, newZ, newLength, newWidth, newDepth)
-        ) {
-            // console.log(`Placing room at (${newX}, ${newY}, ${newZ}) with dimensions (${newLength}x${newWidth}x${newDepth})`);
-            for (let di = 0; di < newDepth; di++) {
-                for (let dj = 0; dj < newLength; dj++) {
-                    for (let dk = 0; dk < newWidth; dk++) {
-                        const x = newX + dj;
-                        const y = newY + dk;
-                        const z = newZ + di;
-
-                        // If this is at a matrix border, don't modify it
-                        if (z === 0) {
-                            continue;
-                        }
-                        // if (x === 0 || x === m - 1 ||
-                        //     y === 0 || y === n - 1 ||
-                        //     z === 0 || z === p - 1) {
-                        //     continue;
-                        // }
-
-                        // For non-border spaces, check if this is a floor that should be shared
-                        //was: === 'stone'
-                        if (di === 0 && matrix[z - 1][x][y] !== 'air') {
-                            // Skip creating floor if there's a ceiling below
-                            matrix[z][x][y] = 'air';
-                        } else if (di === 0 || di === newDepth - 1 ||
-                            dj === 0 || dj === newLength - 1 ||
-                            dk === 0 || dk === newWidth - 1) {
-                            matrix[z][x][y] = material;
-                        } else {
-                            matrix[z][x][y] = 'air';
-                        }
-
-
-                    }
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-
-    function addDoor(matrix, x, y, z, material) {
-        matrix[z][x][y] = material;
-
-        // Place the lower half of the door
-        // matrix[z + 1][x][y] = 'dark_oak_door[half=lower, hinge=left]';
-
-        matrix[z + 1][x][y] = 'dark_oak_door';
-
-
-        // Place the upper half of the door
-        // matrix[z + 2][x][y] = 'dark_oak_door[half=upper, hinge=left]';
-        matrix[z + 2][x][y] = 'dark_oak_door';
-
-    }
-
-
-    // Takes in a room and randomly converts some faces to be windows
-    function addWindowsAsSquares(matrix, x, y, z, newLength, newWidth, newDepth, material) {
-        // Matrix dimensions
-        const matrixDepth = matrix.length;
-        const matrixLength = matrix[0].length;
-        const matrixWidth = matrix[0][0].length;
-        const windowX = Math.ceil(minRoomWidth / 2)
-        const windowY = Math.ceil(minRoomLength / 2)
-        const windowZ = Math.ceil(minRoomDepth / 2)
-
-        // Helper function to check if coordinates are within bounds
-        function isInBounds(z, x, y) {
-            return z >= 0 && z < matrixDepth &&
-                x >= 0 && x < matrixLength &&
-                y >= 0 && y < matrixWidth;
-        }
-
-        // Front and back faces (z is constant)
-        if (Math.random() < 0.8) {
-            let centerX = x + Math.floor(newLength / 2 - windowX / 2);
-            let centerY = y + Math.floor(newWidth / 2 - windowY / 2);
-
-            for (let dx = 0; dx <= windowX; dx++) {
-                for (let dy = 0; dy <= windowY; dy++) {
-                    let frontZ = z;
-                    let backZ = z + newDepth - 1;
-
-                    if (isInBounds(frontZ, centerX + dx, centerY + dy) &&
-                        matrix[frontZ][centerX + dx][centerY + dy] === material) {
-                        matrix[frontZ][centerX + dx][centerY + dy] = 'glass';
-                    }
-                    if (isInBounds(backZ, centerX + dx, centerY + dy) &&
-                        matrix[backZ][centerX + dx][centerY + dy] === material) {
-                        matrix[backZ][centerX + dx][centerY + dy] = 'glass';
-                    }
-                }
-            }
-        }
-
-        // Left and right faces (x is constant)
-        if (Math.random() < 0.8) {
-            let centerZ = z + Math.floor(newDepth / 2 - windowZ / 2);
-            let centerY = y + Math.floor(newWidth / 2 - windowY / 2);
-
-            for (let dz = 0; dz <= windowZ; dz++) {
-                for (let dy = 0; dy <= windowY; dy++) {
-                    let leftX = x;
-                    let rightX = x + newLength - 1;
-
-                    if (isInBounds(centerZ + dz, leftX, centerY + dy) &&
-                        matrix[centerZ + dz][leftX][centerY + dy] === material) {
-                        matrix[centerZ + dz][leftX][centerY + dy] = 'glass';
-                    }
-                    if (isInBounds(centerZ + dz, rightX, centerY + dy) &&
-                        matrix[centerZ + dz][rightX][centerY + dy] === material) {
-                        matrix[centerZ + dz][rightX][centerY + dy] = 'glass';
-                    }
-                }
-            }
-        }
-
-        // Top and bottom faces (y is constant)
-        if (Math.random() < 0.8) {
-            let centerX = x + Math.floor(newLength / 2 - windowX / 2);
-            let centerZ = z + Math.floor(newDepth / 2 - windowZ / 2);
-
-            for (let dx = 0; dx <= windowX; dx++) {
-                for (let dz = 0; dz <= windowZ; dz++) {
-                    let bottomY = y;
-                    let topY = y + newWidth - 1;
-
-                    if (isInBounds(centerZ + dz, centerX + dx, bottomY) &&
-                        matrix[centerZ + dz][centerX + dx][bottomY] === material) {
-                        matrix[centerZ + dz][centerX + dx][bottomY] = 'glass';
-                    }
-                    if (isInBounds(centerZ + dz, centerX + dx, topY) &&
-                        matrix[centerZ + dz][centerX + dx][topY] === material) {
-                        matrix[centerZ + dz][centerX + dx][topY] = 'glass';
-                    }
-                }
-            }
-        }
-    }
-
-    function addWindowsAsPlane(matrix, x, y, z, newLength, newWidth, newDepth, material) {
-        // Ensure the new dimensions are within bounds
-        const maxX = matrix[0].length;
-        const maxY = matrix[0][0].length;
-        const maxZ = matrix.length;
-
-        // Each face has a 30% chance of becoming a window
-        if (Math.random() < 0.8) {
-            for (let dx = 0; dx < newLength; dx++) {
-                for (let dy = 0; dy < newWidth; dy++) {
-                    let frontZ = z;
-                    let backZ = z + newDepth - 1;
-
-                    // Check bounds before modifying the matrix
-                    if (frontZ >= 0 && frontZ < maxZ && x + dx >= 0 && x + dx < maxX && y + dy >= 0 && y + dy < maxY) {
-                        if (matrix[frontZ][x + dx][y + dy] === material) {
-                            matrix[frontZ][x + dx][y + dy] = 'glass';
-                        }
-                    }
-                    if (backZ >= 0 && backZ < maxZ && x + dx >= 0 && x + dx < maxX && y + dy >= 0 && y + dy < maxY) {
-                        if (matrix[backZ][x + dx][y + dy] === material) {
-                            matrix[backZ][x + dx][y + dy] = 'glass';
-                        }
-                    }
-                }
-            }
-        }
-
-        if (Math.random() < 0.8) {
-            for (let dz = 0; dz < newDepth; dz++) {
-                for (let dy = 0; dy < newWidth; dy++) {
-                    let leftX = x;
-                    let rightX = x + newLength - 1;
-
-                    // Check bounds before modifying the matrix
-                    if (leftX >= 0 && leftX < maxX && z + dz >= 0 && z + dz < maxZ && y + dy >= 0 && y + dy < maxY) {
-                        if (matrix[z + dz][leftX][y + dy] === material) {
-                            matrix[z + dz][leftX][y + dy] = 'glass';
-                        }
-                    }
-                    if (rightX >= 0 && rightX < maxX && z + dz >= 0 && z + dz < maxZ && y + dy >= 0 && y + dy < maxY) {
-                        if (matrix[z + dz][rightX][y + dy] === material) {
-                            matrix[z + dz][rightX][y + dy] = 'glass';
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-
-    //still a little buggy
-    function addStairs(matrix, x, y, z, length, width, material) {
-        let currentZ = z;
-        let currentX = x + 1;
-        let currentY = y + 1;
-        let direction = 0;
-        let stepCount = 0;
-        const maxSteps = length * width; // Safety limit
-
-        while (currentZ >= 0 && currentX < x + length - 1 && currentY < y + width - 1 && stepCount < maxSteps) {
-            // Place stair block
-            matrix[currentZ][currentX][currentY] = material || 'stone';
-
-            // Clear 3 blocks above for headroom
-            for (let i = 1; i <= 3; i++) {
-                if (currentZ + i < matrix.length) {
-                    matrix[currentZ + i][currentX][currentY] = 'air';
-                }
-            }
-
-            // Move to next position based on direction
-            if (direction === 0) {
-                currentX++;
-                if (currentX >= x + length - 1) {
-                    currentX = x + length - 2;
-                    direction = 1;
-                } else {
-                    currentZ--;
-                }
-            } else {
-                currentY++;
-                if (currentY >= y + width - 1) {
-                    currentY = y + width - 2;
-                    direction = 0;
-                } else {
-                    currentZ--;
-                }
-            }
-
-            stepCount++;
-        }
-    }
-
-    function addCarpet(probability, matrix, newX, newY, newZ, newLength, newWidth, material) {
-        let colors = ["blue", "cyan", "light_blue", "lime"];
-
-        // Iterate through the dimensions of the room
-        for (let dx = 1; dx < newLength - 1; dx++) {
-            for (let dy = 1; dy < newWidth - 1; dy++) {
-                let x = newX + dx;
-                let y = newY + dy;
-                let z = newZ; // Start at floor level
-
-                // Check if there is floor (not air)
-                if (matrix[z][x][y] === material) {
-                    // Consider a random probability of adding a carpet
-                    if (Math.random() < probability) {
-                        // Choose a random color for the carpet
-                        let randomColor = colors[Math.floor(Math.random() * colors.length)];
-                        // Add carpet one z position above the floor with a random color
-                        matrix[z + 1][x][y] = `${randomColor}_carpet`;
-                    }
-                }
-            }
-        }
-    }
-
-    function addLadder(matrix, x, y, z) {
-        let currentZ = z + 1;
-
-        // turn the floor into air where person would go up
-        matrix[currentZ][x + 1][y] = 'air';
-
-        // Build the first 3 ladder segments from floor level downwards
-        for (let i = 0; i < 3; i++) {
-            // Place stone block behind ladder
-            matrix[currentZ][x - 1][y] = 'stone';
-            // Place ladder
-            matrix[currentZ][x][y] = 'ladder[facing=north]';
-            currentZ -= 1;
-        }
-
-        // Continue building ladder downwards until a floor is hit or we reach the bottom
-        while (currentZ >= 0 && matrix[currentZ][x][y] === 'air') {
-            // Place stone block behind ladder
-            matrix[currentZ][x - 1][y] = 'stone';
-            // Place ladder
-            matrix[currentZ][x][y] = 'ladder[facing=north]';
-
-            // Move down
-            currentZ--;
-        }
-    }
-
-
-    function embellishments(carpet, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material) {
-
-
-        switch (windowStyle) {
-            case 0:
-                break;
-            case 1:
-                addWindowsAsSquares(matrix, newZ, newY, newZ, newLength, newWidth, newDepth, material)
-                break;
-            case 2:
-                addWindowsAsPlane(matrix, newZ, newY, newZ, newLength, newWidth, newDepth, material)
-        }
-
-
-        switch (carpet) {
-            case 0:
-                break;
-            case 1:
-                addCarpet(0.3, matrix, newX, newY, newZ, newLength, newWidth, material);
-                break;
-            case 2:
-                addCarpet(0.7, matrix, newX, newY, newZ, newLength, newWidth, material)
-                break;
-        }
-
-
-    }
-
-
     // Places rooms until we can't, or we place all
-    // attempts random configurations of rooms in random directions.
     while (placedRooms < rooms) {
         let roomPlaced = false;
 
         for (let attempt = 0; attempt < 150; attempt++) {
-
             const material = roomMaterials[Math.floor(Math.random() * roomMaterials.length)];
-
 
             // dimensions of room
             const newLength = Math.max(minRoomLength, Math.floor(Math.random() * roomVariance) + minRoomLength);
@@ -773,12 +611,11 @@ export function proceduralGeneration(m = 20,
             const newDepth = Math.max(minRoomDepth, Math.floor(Math.random() * Math.floor(roomVariance / 2)) + minRoomDepth);
             let newX, newY, newZ;
 
-            // first room is special
             if (placedRooms === 0) {
                 // First room placement
                 newX = Math.floor(Math.random() * (m - newLength - 1)) + 1;
                 newY = Math.floor(Math.random() * (n - newWidth - 1)) + 1;
-                newZ = 0; // Ground floor
+                newZ = 0;
 
                 if (validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material)) {
                     lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
@@ -786,132 +623,66 @@ export function proceduralGeneration(m = 20,
                     placedRooms++;
 
                     // Add doors to all four sides
-                    // Left side
                     addDoor(matrix, newX, newY + Math.floor(newWidth / 2), newZ, material);
-                    // Right side
                     addDoor(matrix, newX + newLength - 1, newY + Math.floor(newWidth / 2), newZ, material);
-                    // Front side
                     addDoor(matrix, newX + Math.floor(newLength / 2), newY, newZ, material);
-                    // Back side
                     addDoor(matrix, newX + Math.floor(newLength / 2), newY + newWidth - 1, newZ, material);
 
-                    addCarpet(0.7, matrix, newX, newY, newZ, newLength, newWidth)
+                    addCarpet(0.7, matrix, newX, newY, newZ, newLength, newWidth);
                 }
-
                 break;
             } else {
                 const direction = getRandomDirection();
 
                 switch (direction) {
                     case 'above':
-                        newX = lastRoom.x;
-                        newY = lastRoom.y;
-                        newZ = lastRoom.z + lastRoom.depth - 1;
+                        newX = lastRoom.x; newY = lastRoom.y; newZ = lastRoom.z + lastRoom.depth - 1;
                         if (validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material)) {
-
-                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material)
-
-                            // addLadder(matrix, lastRoom.x + Math.floor(lastRoom.length / 2),
-                            //     lastRoom.y + Math.floor(lastRoom.width / 2),
-                            //     newZ); // Adding the ladder
-
-                            addStairs(matrix, newX, newY, newZ, newLength, newWidth, material)
-
-
+                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material, minRoomWidth, minRoomLength, minRoomDepth);
+                            addStairs(matrix, newX, newY, newZ, newLength, newWidth, material);
                             lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
-                            roomPlaced = true;
-                            placedRooms++;
-                            break;
+                            roomPlaced = true; placedRooms++;
                         }
                         break;
-
                     case 'left':
-                        newX = lastRoom.x - newLength + 1;
-                        newY = lastRoom.y;
-                        newZ = lastRoom.z;
+                        newX = lastRoom.x - newLength + 1; newY = lastRoom.y; newZ = lastRoom.z;
                         if (validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material)) {
-
-
-                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material)
-
-
+                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material, minRoomWidth, minRoomLength, minRoomDepth);
                             addDoor(matrix, lastRoom.x, lastRoom.y + Math.floor(lastRoom.width / 2), lastRoom.z, material);
-
-
                             lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
-                            roomPlaced = true;
-                            placedRooms++;
-                            break;
+                            roomPlaced = true; placedRooms++;
                         }
                         break;
-
                     case 'right':
-                        newX = lastRoom.x + lastRoom.length - 1;
-                        newY = lastRoom.y;
-                        newZ = lastRoom.z;
+                        newX = lastRoom.x + lastRoom.length - 1; newY = lastRoom.y; newZ = lastRoom.z;
                         if (validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material)) {
-
-                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material)
-
-
-                            addDoor(matrix, lastRoom.x + lastRoom.length - 1,
-                                lastRoom.y + Math.floor(lastRoom.width / 2),
-                                lastRoom.z, material);
-
-
+                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material, minRoomWidth, minRoomLength, minRoomDepth);
+                            addDoor(matrix, lastRoom.x + lastRoom.length - 1, lastRoom.y + Math.floor(lastRoom.width / 2), lastRoom.z, material);
                             lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
-                            roomPlaced = true;
-                            placedRooms++;
-                            break;
+                            roomPlaced = true; placedRooms++;
                         }
                         break;
-
                     case 'forward':
-                        newX = lastRoom.x;
-                        newY = lastRoom.y + lastRoom.width - 1;
-                        newZ = lastRoom.z;
+                        newX = lastRoom.x; newY = lastRoom.y + lastRoom.width - 1; newZ = lastRoom.z;
                         if (validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material)) {
-
-                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material)
-
-
-                            addDoor(matrix, lastRoom.x + Math.floor(lastRoom.length / 2),
-                                lastRoom.y + lastRoom.width - 1,
-                                lastRoom.z, material);
-
-
+                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material, minRoomWidth, minRoomLength, minRoomDepth);
+                            addDoor(matrix, lastRoom.x + Math.floor(lastRoom.length / 2), lastRoom.y + lastRoom.width - 1, lastRoom.z, material);
                             lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
-                            roomPlaced = true;
-                            placedRooms++;
-                            break;
+                            roomPlaced = true; placedRooms++;
                         }
                         break;
-
                     case 'backward':
-                        newX = lastRoom.x;
-                        newY = lastRoom.y - newWidth + 1;
-                        newZ = lastRoom.z;
+                        newX = lastRoom.x; newY = lastRoom.y - newWidth + 1; newZ = lastRoom.z;
                         if (validateAndBuildBorder(matrix, newX, newY, newZ, newLength, newWidth, newDepth, m, n, p, material)) {
-
-                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material)
-
-
-                            addDoor(matrix, lastRoom.x + Math.floor(lastRoom.length / 2),
-                                lastRoom.y,
-                                lastRoom.z, material);
-
-
+                            embellishments(carpetStyle, windowStyle, matrix, newX, newY, newZ, newLength, newWidth, newDepth, material, minRoomWidth, minRoomLength, minRoomDepth);
+                            addDoor(matrix, lastRoom.x + Math.floor(lastRoom.length / 2), lastRoom.y, lastRoom.z, material);
                             lastRoom = { x: newX, y: newY, z: newZ, length: newLength, width: newWidth, depth: newDepth };
-                            roomPlaced = true;
-                            placedRooms++;
-                            break;
+                            roomPlaced = true; placedRooms++;
                         }
                         break;
                 }
 
-                if (roomPlaced) {
-                    break;
-                }
+                if (roomPlaced) break;
             }
         }
 
@@ -921,14 +692,8 @@ export function proceduralGeneration(m = 20,
         }
     }
 
-    // uncomment to visualize blueprint output
-    // printMatrix(matrix)
-
-    return matrixToBlueprint(matrix, startCoord)
+    return matrixToBlueprint(matrix, startCoord);
 }
-
-
-
 
 /**
  * for cutesy output

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { THRESHOLDS } from '../utils/constants.js';
 
 export class LearnedSkills {
     constructor(agent) {
@@ -128,7 +129,7 @@ export class LearnedSkills {
         const successRate = skill.success_count / totalUses;
 
         // CRITICAL LOGIC: Auto-delete if usage >= 3 and success rate < 30%
-        if (totalUses >= 3 && successRate < 0.3) {
+        if (totalUses >= THRESHOLDS.SKILL_MIN_USES_EVAL && successRate < THRESHOLDS.SKILL_SUCCESS_MIN) {
             console.warn(`[LearnedSkills] DELETING low-quality skill: ${skillName} (Rate: ${(successRate * 100).toFixed(1)}%)`);
 
             // Delete the physical JS file
@@ -197,20 +198,31 @@ export class LearnedSkills {
             }
 
             if (skillsToEmbed.length > 0) {
-                // Tembak API secara bersamaan menggunakan Promise.all
-                await Promise.all(skillsToEmbed.map(async ({ skillName, textToEmbed }) => {
-                    try {
-                        const newEmbed = await this.agent.prompter.embedding_model.embed(textToEmbed);
-                        if (newEmbed && Array.isArray(newEmbed) && newEmbed.length > 0) {
-                            this.vectorCache[skillName] = newEmbed;
-                            metadataChanged = true;
-                        } else {
-                            console.warn(`[LearnedSkills] Invalid embedding for '${skillName}'. Skipping cache.`);
+                // FIXED: Terapkan sistem Batching/Chunking untuk mencegah serangan DoS mandiri ke API provider
+                const BATCH_SIZE = 5; // Eksekusi maksimal 5 request paralel sekaligus
+
+                for (let i = 0; i < skillsToEmbed.length; i += BATCH_SIZE) {
+                    const chunk = skillsToEmbed.slice(i, i + BATCH_SIZE);
+
+                    await Promise.all(chunk.map(async ({ skillName, textToEmbed }) => {
+                        try {
+                            const newEmbed = await this.agent.prompter.embedding_model.embed(textToEmbed);
+                            if (newEmbed && Array.isArray(newEmbed) && newEmbed.length > 0) {
+                                this.vectorCache[skillName] = newEmbed;
+                                metadataChanged = true;
+                            } else {
+                                console.warn(`[LearnedSkills] Invalid embedding for '${skillName}'. Skipping cache.`);
+                            }
+                        } catch (e) {
+                            console.warn(`[LearnedSkills] Embedding API failed for '${skillName}':`, e.message);
                         }
-                    } catch (e) {
-                        console.warn(`[LearnedSkills] Embedding API failed for '${skillName}':`, e.message);
+                    }));
+
+                    // FIXED: Backoff Delay - Beri jeda 1 detik antar batch agar API punya waktu istirahat
+                    if (i + BATCH_SIZE < skillsToEmbed.length) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
-                }));
+                }
             }
         }
 

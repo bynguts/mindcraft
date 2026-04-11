@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as mindcraft from './mindcraft.js';
 import { readFileSync } from 'fs';
+import { TIMEOUTS } from '../utils/constants.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Mindserver is:
@@ -58,14 +59,34 @@ export function createMindServer(host_public = false, port = 8080) {
     // FIXED 1: Global API queue time untuk centralized rate limiting
     let global_api_queue_time = Date.now();
 
-    // FIXED 2: Kunci server dengan token autentikasi (Security Patch)
-    const AUTH_TOKEN = process.env.MINDCRAFT_SECRET || "mindcraft_super_secret_123";
+    const AUTH_TOKEN = process.env.MINDCRAFT_SECRET;
 
+    // API Baru untuk menerima login dan mencetak Cookie Aman (httpOnly)
+    app.use(express.json());
+    app.post('/api/login', (req, res) => {
+        if (req.body.password === AUTH_TOKEN) {
+            res.cookie('mindcraft_session', AUTH_TOKEN, {
+                httpOnly: true,
+                sameSite: 'strict',
+                maxAge: 24 * 60 * 60 * 1000 // Berlaku 24 jam
+            });
+            res.json({ success: true });
+        } else {
+            res.status(401).json({ success: false, error: "Password salah!" });
+        }
+    });
+
+    // Helper untuk membaca Cookie dari Socket.io
+    const parseCookies = (cookieStr) => {
+        if (!cookieStr) return {};
+        return Object.fromEntries(cookieStr.split(';').map(c => c.trim().split('=')));
+    };
+
+    // Keamanan Socket.io sekarang mengambil token dari Cookie, BUKAN dari Javascript
     io.use((socket, next) => {
-        // Ambil token dari auth object atau query parameter
-        const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+        const cookies = parseCookies(socket.request.headers.cookie);
 
-        if (token === AUTH_TOKEN) {
+        if (cookies.mindcraft_session === AUTH_TOKEN && AUTH_TOKEN) {
             return next();
         }
 
@@ -285,7 +306,7 @@ export function createMindServer(host_public = false, port = 8080) {
         const now = Date.now();
         for (let agentName in agent_connections) {
             const conn = agent_connections[agentName];
-            if (conn.in_game && (now - conn.last_heartbeat > 15000)) {
+            if (conn.in_game && (now - conn.last_heartbeat > TIMEOUTS.HEARTBEAT_MAX)) {
                 console.log(`[Watchdog] Agent ${agentName} heartbeat timeout. Marking as crashed.`);
                 conn.in_game = false;
                 changed = true;

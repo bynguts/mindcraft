@@ -2,11 +2,12 @@ import * as skills from '../library/skills.js';
 import settings from '../settings.js';
 import convoManager from '../conversation.js';
 import fs from 'fs';
-import { makeCompartment } from '../library/lockdown.js';
+import { makeCompartment, lockdown } from '../library/lockdown.js';
 import * as worldLib from '../library/world.js';
 import { Vec3 } from 'vec3';
 import { addCommand } from './index.js';
 import path from 'path';
+import { THRESHOLDS } from '../../utils/constants.js';
 
 function runAsAction(actionFn, resume = false, timeout = -1) {
     let actionLabel = null;
@@ -29,13 +30,146 @@ function runAsAction(actionFn, resume = false, timeout = -1) {
     return wrappedAction;
 }
 
+// --- REFACTOR: Modular Helper Functions for !newAction ---
+
+async function generateAndStage(agent, prompt) {
+    let prevCounter = agent.coder.file_counter;
+    let resultMsg = await agent.coder.generateCode(agent.history);
+    let success = (agent.coder.file_counter > prevCounter && !resultMsg.includes('Code generation failed'));
+
+    let cleanName = prompt.split(' ').slice(0, 4).join('_').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    if (!cleanName || cleanName === '') cleanName = 'custom_action_' + Date.now();
+
+    let lastFile = `.${agent.coder.fp}current.js`;
+
+    return { success, cleanName, lastFile, resultMsg };
+}
+
+async function deduplicateSkill(agent, cleanName, prompt, depsArray) {
+    let newEmbedding = null;
+    let isDuplicate = false;
+    let finalName = cleanName;
+
+    if (agent.learned_skills) {
+        let textToEmbed = `${cleanName} ${prompt} ${depsArray.join(' ')}`;
+        try {
+            if (agent.prompter && agent.prompter.embedding_model) {
+                newEmbedding = await agent.prompter.embedding_model.embed(textToEmbed);
+            }
+        } catch (e) {
+            console.warn('[Refactor] Failed to generate embedding.', e);
+        }
+
+        let highestSim = 0;
+        let mostSimilarSkill = null;
+        if (newEmbedding && agent.learned_skills.vectorCache) {
+            for (const [sName, sVector] of Object.entries(agent.learned_skills.vectorCache)) {
+                if (sVector && Array.isArray(sVector)) {
+                    let sim = agent.learned_skills.cosineSimilarity(newEmbedding, sVector);
+                    if (sim > highestSim) {
+                        highestSim = sim;
+                        mostSimilarSkill = sName;
+                    }
+                }
+            }
+        }
+
+        if (highestSim > THRESHOLDS.SIMILARITY_DUPLICATE && mostSimilarSkill) {
+            console.log(`[LearnedSkills] Skill deduplication: '${cleanName}' is similar to '${mostSimilarSkill}' (${highestSim.toFixed(2)}). Updating existing skill.`);
+            finalName = mostSimilarSkill;
+            isDuplicate = true;
+        }
+    }
+
+    return { finalName, isDuplicate, newEmbedding };
+}
+
+function backupExisting(cleanName, targetFile, historyFolder) {
+    if (!fs.existsSync(targetFile)) return;
+    if (!fs.existsSync(historyFolder)) fs.mkdirSync(historyFolder, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = path.join(historyFolder, `${cleanName}_${timestamp}.js.bak`);
+
+    try {
+        fs.renameSync(targetFile, backupPath);
+        console.log(`[Versioning] Backed up old version of ${cleanName} to history.`);
+    } catch (renameErr) {
+        console.warn(`[Versioning] Warning: Gagal memindah file ke backup. Lewati backup.`);
+    }
+
+    try {
+        const maxBackups = 5;
+        const files = fs.readdirSync(historyFolder);
+        const backups = files
+            .filter(f => f.startsWith(`${cleanName}_`) && f.endsWith('.js.bak'))
+            .map(f => {
+                try {
+                    return { name: f, time: fs.statSync(path.join(historyFolder, f)).mtime.getTime() };
+                } catch (e) {
+                    return { name: f, time: 0 };
+                }
+            })
+            .sort((a, b) => b.time - a.time);
+
+        if (backups.length > maxBackups) {
+            for (let i = maxBackups; i < backups.length; i++) {
+                try {
+                    fs.unlinkSync(path.join(historyFolder, backups[i].name));
+                    console.log(`[Versioning] Pruned obsolete backup: ${backups[i].name}`);
+                } catch (e) { }
+            }
+        }
+    } catch (err) {
+        console.error(`[Versioning] Failed to cleanup old backups: ${err.message}`);
+    }
+}
+
+function registerCommand(commandName, saveFolder) {
+    const newCommand = {
+        name: `!${commandName}`,
+        description: `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning.`,
+        perform: runAsAction(async (agent) => {
+            const src = fs.readFileSync(path.join(saveFolder, `${commandName}.js`), 'utf8');
+
+            // Menggunakan fungsi pengaman global yang sudah kita bahas di isu sebelumnya
+            if (typeof lockdown === 'function') lockdown();
+
+            const compartment = makeCompartment({
+                skills: skills,
+                log: skills.log,
+                world: worldLib,
+                Vec3
+            });
+
+            try {
+                const mainFn = compartment.evaluate(src);
+                await mainFn(agent.bot);
+
+                if (agent.learned_skills) {
+                    agent.learned_skills.updateSkillPerformance(commandName, true);
+                }
+            } catch (err) {
+                console.error(`Skill ${commandName} execution failed:`, err);
+                if (agent.learned_skills) {
+                    agent.learned_skills.updateSkillPerformance(commandName, false);
+                }
+                throw err;
+            }
+        })
+    };
+
+    actionsList.push(newCommand);
+    addCommand(newCommand);
+}
+// --------------------------------------------------------
+
 export const actionsList = [
     {
         name: '!newAction',
         description: 'Perform custom behaviors not available as a command.',
         params: {
             'prompt': { type: 'string', description: 'A natural language prompt to guide code generation. Make a detailed step-by-step plan.' },
-            // FIXED: Tambahkan parameter dependencies agar LLM bisa mendefinisikannya (Bug #36)
             'dependencies': { type: 'string', description: 'Optional comma-separated list of items/skills required to execute this action (e.g. "oak_log, crafting_table"). Leave empty if none.' }
         },
         perform: async function (agent, prompt, dependencies = "") {
@@ -43,140 +177,48 @@ export const actionsList = [
                 agent.openChat('newAction is disabled.');
                 return "newAction not allowed! Code writing is disabled.";
             }
+
             let result = "";
             const actionFn = async () => {
                 try {
-                    let prevCounter = agent.coder.file_counter;
-                    result = await agent.coder.generateCode(agent.history);
-
-                    if (agent.coder.file_counter > prevCounter && !result.includes('Code generation failed')) {
-                        let cleanName = prompt.split(' ').slice(0, 4).join('_').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-                        if (!cleanName || cleanName === '') cleanName = 'custom_action_' + Date.now();
-
-                        // FIXED: Sesuaikan pembacaan dengan nama file statis baru dari coder.js
-                        let lastFile = `.${agent.coder.fp}current.js`;
-                        let saveFolder = './bots/saved_skills/';
-
-                        if (!fs.existsSync(saveFolder)) fs.mkdirSync(saveFolder, { recursive: true });
-
-                        let depsArray = typeof dependencies === 'string' && dependencies.trim() !== '' ? dependencies.split(',').map(d => d.trim()) : [];
-                        let newEmbedding = null;
-                        let isDuplicate = false;
-
-                        // FIXED: Generate embedding dan cek Deduplikasi SEBELUM menentukan nama file backup
-                        if (agent.learned_skills) {
-                            let textToEmbed = `${cleanName} ${prompt} ${depsArray.join(' ')}`;
-                            try {
-                                if (agent.prompter && agent.prompter.embedding_model) {
-                                    newEmbedding = await agent.prompter.embedding_model.embed(textToEmbed);
-                                }
-                            } catch (e) {
-                                console.warn('Failed to generate embedding for new action.', e);
-                            }
-
-                            let highestSim = 0;
-                            let mostSimilarSkill = null;
-                            if (newEmbedding && agent.learned_skills.vectorCache) {
-                                for (const [sName, sVector] of Object.entries(agent.learned_skills.vectorCache)) {
-                                    if (sVector && Array.isArray(sVector)) {
-                                        let sim = agent.learned_skills.cosineSimilarity(newEmbedding, sVector);
-                                        if (sim > highestSim) {
-                                            highestSim = sim;
-                                            mostSimilarSkill = sName;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Threshold 0.92 untuk menentukan duplikasi
-                            if (highestSim > 0.92 && mostSimilarSkill) {
-                                console.log(`[LearnedSkills] Skill deduplication: '${cleanName}' is similar to '${mostSimilarSkill}' (${highestSim.toFixed(2)}). Updating existing skill.`);
-                                cleanName = mostSimilarSkill;
-                                isDuplicate = true;
-                            }
-                        }
-
-                        const historyFolder = path.join(saveFolder, 'history');
-                        const targetFile = path.join(saveFolder, `${cleanName}.js`);
-
-                        // Logika Backup (Sekarang aman karena cleanName sudah di-update jika duplikat)
-                        if (fs.existsSync(targetFile)) {
-                            if (!fs.existsSync(historyFolder)) fs.mkdirSync(historyFolder, { recursive: true });
-
-                            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                            const backupPath = path.join(historyFolder, `${cleanName}_${timestamp}.js.bak`);
-
-                            fs.renameSync(targetFile, backupPath);
-                            console.log(`[Versioning] Backed up old version of ${cleanName} to history.`);
-
-                            try {
-                                const maxBackups = 5;
-                                const files = fs.readdirSync(historyFolder);
-                                const backups = files
-                                    .filter(f => f.startsWith(`${cleanName}_`) && f.endsWith('.js.bak'))
-                                    .map(f => ({ name: f, time: fs.statSync(path.join(historyFolder, f)).mtime.getTime() }))
-                                    .sort((a, b) => b.time - a.time);
-
-                                if (backups.length > maxBackups) {
-                                    for (let i = maxBackups; i < backups.length; i++) {
-                                        fs.unlinkSync(path.join(historyFolder, backups[i].name));
-                                        console.log(`[Versioning] Pruned obsolete backup: ${backups[i].name}`);
-                                    }
-                                }
-                            } catch (err) {
-                                console.error(`[Versioning] Failed to cleanup old backups: ${err.message}`);
-                            }
-                        }
-
-                        // Simpan file skill baru/update
-                        fs.copyFileSync(lastFile, targetFile);
-
-                        if (agent.learned_skills) {
-                            // Argumen sekarang dikirim ke posisi yang benar
-                            agent.learned_skills.registerSkill(cleanName, prompt, newEmbedding, ["auto-generated", "action", isDuplicate ? "updated" : "new"], depsArray);
-                        }
-
-                        // Jika bukan duplikat, tambahkan ke list command internal bot
-                        if (!isDuplicate) {
-                            const newCommand = {
-                                name: `!${cleanName}`,
-                                description: `Automatic skill: ${cleanName.replace(/_/g, ' ')}. Use this !${cleanName} command if the user asks you to perform a similar action or one with the same meaning.`,
-                                perform: runAsAction(async (agent) => {
-                                    const src = fs.readFileSync(`${saveFolder}${cleanName}.js`, 'utf8');
-                                    const compartment = makeCompartment({
-                                        skills: skills,
-                                        log: skills.log,
-                                        world: worldLib,
-                                        Vec3
-                                    });
-
-                                    try {
-                                        const mainFn = compartment.evaluate(src);
-                                        await mainFn(agent.bot);
-
-                                        if (agent.learned_skills) {
-                                            agent.learned_skills.updateSkillPerformance(cleanName, true);
-                                        }
-                                    } catch (err) {
-                                        console.error(`Skill ${cleanName} execution failed:`, err);
-                                        if (agent.learned_skills) {
-                                            agent.learned_skills.updateSkillPerformance(cleanName, false);
-                                        }
-                                        throw err;
-                                    }
-                                })
-                            };
-
-                            actionsList.push(newCommand);
-                            addCommand(newCommand);
-                        }
-
-                        result += `\n[SUCCESS: Skill !${cleanName} has been ${isDuplicate ? 'updated' : 'learned'} and is ready to use.]`;
+                    // 1. Generate & Stage Code
+                    const { success, cleanName: initialName, lastFile, resultMsg } = await generateAndStage(agent, prompt);
+                    if (!success) {
+                        result = resultMsg;
+                        return;
                     }
+
+                    // 2. Deduplicate & Get Final Name
+                    let depsArray = typeof dependencies === 'string' && dependencies.trim() !== '' ? dependencies.split(',').map(d => d.trim()) : [];
+                    const { finalName: cleanName, isDuplicate, newEmbedding } = await deduplicateSkill(agent, initialName, prompt, depsArray);
+
+                    // 3. Prepare Paths & Run Backup Versioning
+                    let saveFolder = './bots/saved_skills/';
+                    if (!fs.existsSync(saveFolder)) fs.mkdirSync(saveFolder, { recursive: true });
+                    const historyFolder = path.join(saveFolder, 'history');
+                    const targetFile = path.join(saveFolder, `${cleanName}.js`);
+
+                    backupExisting(cleanName, targetFile, historyFolder);
+
+                    // 4. Save New Skill Execution File
+                    fs.copyFileSync(lastFile, targetFile);
+
+                    // 5. Register Metadata & Analytics
+                    if (agent.learned_skills) {
+                        agent.learned_skills.registerSkill(cleanName, prompt, newEmbedding, ["auto-generated", "action", isDuplicate ? "updated" : "new"], depsArray);
+                    }
+
+                    // 6. Register Command to Engine (Only if completely new)
+                    if (!isDuplicate) {
+                        registerCommand(cleanName, saveFolder);
+                    }
+
+                    result = resultMsg + `\n[SUCCESS: Skill !${cleanName} has been ${isDuplicate ? 'updated' : 'learned'} and is ready to use.]`;
                 } catch (e) {
                     result = 'Error generating code: ' + e.toString();
                 }
             };
+
             await agent.actions.runAction('action:newAction', actionFn, { timeout: settings.code_timeout_mins });
             return result;
         }
@@ -779,79 +821,86 @@ export function loadSavedSkills() {
         const files = fs.readdirSync(saveFolder);
         for (const file of files) {
             if (file.endsWith('.js')) {
-                // 2. FIXED: Guard Clause untuk memblokir karakter navigasi berbahaya (Path Traversal)
-                if (file.includes('..') || file.includes('/') || file.includes('\\')) {
-                    console.warn(`[Security] Blocked suspicious skill file name: ${file}`);
-                    continue;
-                }
+                try {
+                    // 1. FIXED: Ambil nama file murni untuk menetralisir payload seperti ..%2f
+                    const safeFileName = path.basename(file);
+                    const rawPath = path.join(saveFolder, safeFileName);
 
-                // Bangun path absolut yang aman
-                const filePath = path.join(saveFolder, file);
+                    // 2. FIXED: Bongkar symlink dan path palsu untuk mendapatkan lokasi asli di disk
+                    const filePath = fs.realpathSync(rawPath);
+                    const normalizedBase = fs.realpathSync(saveFolder);
 
-                // 3. FIXED: Validasi akhir bahwa path hasil penggabungan tidak keluar dari saveFolder
-                if (!filePath.startsWith(saveFolder)) {
-                    console.warn(`[Security] Blocked path traversal attempt: ${file}`);
-                    continue;
-                }
-
-                const commandName = file.replace('.js', '');
-
-                if (!validSkills[commandName]) {
-                    console.log(`[Auto-Skill] Attempting to delete orphaned/outdated zombie skill: ${file}`);
-                    // FIXED: Pasang try-catch untuk mencegah crash saat startup jika file terkunci (EBUSY/EPERM)
-                    try {
-                        fs.unlinkSync(filePath);
-                        console.log(`[Auto-Skill] Successfully deleted ${file}`);
-                    } catch (err) {
-                        console.warn(`[Auto-Skill] Warning: Failed to delete ${file}. File might be locked or permission denied. Error: ${err.message}`);
-                        // Biarkan loop berlanjut tanpa menghancurkan startup process
+                    // 3. FIXED: Validasi akhir menggunakan jalur asli yang sudah dinormalisasi OS
+                    if (!filePath.startsWith(normalizedBase)) {
+                        console.warn(`[Security] Blocked symlink or path traversal attempt: ${file}`);
+                        continue;
                     }
+
+                    const commandName = safeFileName.replace('.js', '');
+
+                    if (!validSkills[commandName]) {
+                        console.log(`[Auto-Skill] Attempting to delete orphaned/outdated zombie skill: ${safeFileName}`);
+                        try {
+                            fs.unlinkSync(filePath);
+                            console.log(`[Auto-Skill] Successfully deleted ${safeFileName}`);
+                        } catch (err) {
+                            console.warn(`[Auto-Skill] Warning: Failed to delete ${safeFileName}. File might be locked or permission denied. Error: ${err.message}`);
+                        }
+                        continue;
+                    }
+
+                    const existingIndex = actionsList.findIndex(a => a.name === `!${commandName}`);
+                    if (existingIndex !== -1) {
+                        actionsList.splice(existingIndex, 1);
+                    }
+
+                    const deps = validSkills[commandName].dependencies;
+                    const depsText = deps && deps.length > 0 ? ` [Requires: ${deps.join(', ')}]` : '';
+
+                    const newCommand = {
+                        name: `!${commandName}`,
+                        description: (validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`) + depsText,
+                        perform: runAsAction(async (agent) => {
+                            // Membaca dari filePath yang sudah 100% dipastikan keamanannya
+                            const src = fs.readFileSync(filePath, 'utf8');
+
+                            // FIXED: Kunci environment global SEBELUM skill lama dieksekusi
+                            lockdown();
+
+                            const compartment = makeCompartment({
+                                skills: skills,
+                                log: skills.log,
+                                world: worldLib,
+                                Vec3
+                            });
+
+                            try {
+                                const mainFn = compartment.evaluate(src);
+                                await mainFn(agent.bot);
+
+                                if (agent.learned_skills) {
+                                    agent.learned_skills.updateSkillPerformance(commandName, true);
+                                }
+                            } catch (err) {
+                                console.error(`[Auto-Skill] ${commandName} execution failed:`, err);
+
+                                if (agent.learned_skills) {
+                                    agent.learned_skills.updateSkillPerformance(commandName, false);
+                                }
+                                throw err;
+                            }
+                        })
+                    };
+
+                    actionsList.push(newCommand);
+                    addCommand(newCommand);
+                    console.log(`[Auto-Load] Valid skill loaded/reloaded: !${commandName}`);
+
+                } catch (err) {
+                    // Menangkap error dari realpathSync jika file tidak bisa diakses/hilang
+                    console.error(`[Security/IO] Could not safely process skill file ${file}:`, err.message);
                     continue;
                 }
-
-                const existingIndex = actionsList.findIndex(a => a.name === `!${commandName}`);
-                if (existingIndex !== -1) {
-                    actionsList.splice(existingIndex, 1);
-                }
-
-                // Suntikkan dependencies ke dalam description command agar agen tahu syaratnya (Bug #36)
-                const deps = validSkills[commandName].dependencies;
-                const depsText = deps && deps.length > 0 ? ` [Requires: ${deps.join(', ')}]` : '';
-
-                const newCommand = {
-                    name: `!${commandName}`,
-                    description: (validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`) + depsText,
-                    perform: runAsAction(async (agent) => {
-                        // 4. FIXED: Gunakan filePath yang sudah aman, bukan string concat manual
-                        const src = fs.readFileSync(filePath, 'utf8');
-                        const compartment = makeCompartment({
-                            skills: skills,
-                            log: skills.log,
-                            world: worldLib,
-                            Vec3
-                        });
-
-                        try {
-                            const mainFn = compartment.evaluate(src);
-                            await mainFn(agent.bot);
-
-                            if (agent.learned_skills) {
-                                agent.learned_skills.updateSkillPerformance(commandName, true);
-                            }
-                        } catch (err) {
-                            console.error(`[Auto-Skill] ${commandName} execution failed:`, err);
-
-                            if (agent.learned_skills) {
-                                agent.learned_skills.updateSkillPerformance(commandName, false);
-                            }
-                            throw err;
-                        }
-                    })
-                };
-
-                actionsList.push(newCommand);
-                addCommand(newCommand);
-                console.log(`[Auto-Load] Valid skill loaded/reloaded: !${commandName}`);
             }
         }
     }

@@ -27,10 +27,10 @@ export class NPCContoller {
             let sizex = this.constructions[name].blocks[0][0].length;
             let sizez = this.constructions[name].blocks[0].length;
             let sizey = this.constructions[name].blocks.length;
-            for (let y = offset; y < sizey+offset; y++) {
+            for (let y = offset; y < sizey + offset; y++) {
                 for (let z = 0; z < sizez; z++) {
                     for (let x = 0; x < sizex; x++) {
-                        positions.push({x: position.x + x, y: position.y + y, z: position.z + z});
+                        positions.push({ x: position.x + x, y: position.y + y, z: position.z + z });
                     }
                 }
             }
@@ -66,30 +66,39 @@ export class NPCContoller {
         }
 
         this.agent.bot.on('idle', async () => {
-            if (this.data.goals.length === 0 && !this.data.curr_goal) return;
-            // Wait a while for inputs before acting independently
-            await new Promise((resolve) => setTimeout(resolve, 5000));
-            if (!this.agent.isIdle()) return;
+            // FIXED: Wrap event handler dalam try-catch agar silent error (unhandled promise rejection) bisa terlacak
+            try {
+                if (this.data.goals.length === 0 && !this.data.curr_goal) return;
 
-            // Persue goal
-            if (!this.agent.actions.resume_func) {
-                this.executeNext();
-                this.agent.history.save();
+                // Wait a while for inputs before acting independently
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+                if (!this.agent.isIdle()) return;
+
+                // Persue goal
+                if (!this.agent.actions.resume_func) {
+                    // FIXED: Pastikan fungsi async di-await agar errornya tertangkap oleh blok catch
+                    await this.executeNext();
+                    await this.agent.history.save();
+                }
+            } catch (err) {
+                console.error('[NPCController] 🚨 Critical Error in idle event handler:', err);
+                // Pastikan bot tetap mereset state agar tidak terjebak (stuck)
+                this.agent.bot.clearControlStates();
             }
         });
     }
 
-    async setGoal(name=null, quantity=1) {
+    async setGoal(name = null, quantity = 1) {
         this.data.curr_goal = null;
         this.last_goals = {};
         if (name) {
-            this.data.curr_goal = {name: name, quantity: quantity};
+            this.data.curr_goal = { name: name, quantity: quantity };
             return;
         }
 
         if (!this.data.do_set_goal) return;
 
-        let past_goals = {...this.last_goals};
+        let past_goals = { ...this.last_goals };
         for (let goal in this.data.goals) {
             if (past_goals[goal.name] === undefined) past_goals[goal.name] = true;
         }
@@ -108,7 +117,7 @@ export class NPCContoller {
             await skills.moveAway(this.agent.bot, 2);
         });
 
-        if (!this.data.do_routine || this.agent.bot.time.timeOfDay < 13000) { 
+        if (!this.data.do_routine || this.agent.bot.time.timeOfDay < 13000) {
             // Exit any buildings
             let building = this.currentBuilding();
             if (building == this.data.home) {

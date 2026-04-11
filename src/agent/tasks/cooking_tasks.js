@@ -218,11 +218,15 @@ export class CookingTaskInitiator {
         const depth = 10;
         const height = 5;
 
-        // FIXED: Deteksi penolakan command dari server (No Permission) sebelum masuk loop raksasa (Bug #41)
+        // FIXED: Menggunakan System Message Acknowledgment untuk mencegah False Positive dari chat player
         let hasPermission = true;
-        const permissionListener = (msg) => {
-            const text = msg.toString().toLowerCase();
-            // Cek keyword penolakan standar dari Vanilla / Spigot / PaperMC
+        const permissionListener = (jsonMsg, position) => {
+            // Filter absolut: Hanya proses pesan 'system' (dari server API). Abaikan 'chat' (dari pemain).
+            if (position === 'chat') return;
+
+            const text = jsonMsg.toString().toLowerCase();
+
+            // Cek keyword penolakan standar dari server
             if (text.includes('permission') || text.includes('unknown command') || text.includes('error')) {
                 hasPermission = false;
             }

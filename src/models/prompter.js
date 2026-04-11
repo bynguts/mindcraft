@@ -132,17 +132,37 @@ export class Prompter {
     }
 
     async replaceStrings(prompt, messages, examples = null, to_summarize = [], last_goals = null) {
-        // FIXED: Implementasi TTL Cache untuk mencegah redundant CPU-heavy world queries
-        // Memastikan komputasi state yang sama tidak diulang berkali-kali dalam satu tick obrolan (Performance Patch)
-        if (!this.stringCache) this.stringCache = {};
+        // FIXED: Implementasi LRU & TTL Cache dengan Auto-Cleanup untuk mencegah Memory Leak
+        if (!this.stringCache) this.stringCache = new Map();
         const now = Date.now();
 
-        const getCached = async (key, ttl_ms, fetcher) => {
-            if (this.stringCache[key] && (now - this.stringCache[key].time < ttl_ms)) {
-                return this.stringCache[key].value;
+        // 1. Auto-Cleanup: Hapus semua cache yang sudah melewati batas waktu aman (contoh: > 5000ms)
+        for (const [k, v] of this.stringCache.entries()) {
+            if (now - v.time > 5000) {
+                this.stringCache.delete(k);
             }
+        }
+
+        const getCached = async (key, ttl_ms, fetcher) => {
+            // 2. Hit Cache
+            if (this.stringCache.has(key)) {
+                const cached = this.stringCache.get(key);
+                if (now - cached.time < ttl_ms) {
+                    return cached.value;
+                }
+            }
+
+            // 3. LRU Limit: Mencegah Map membengkak di luar kendali jika kunci dinamis ditambahkan
+            const MAX_CACHE_SIZE = 10;
+            if (this.stringCache.size >= MAX_CACHE_SIZE) {
+                // Map di JavaScript mempertahankan urutan insersi, item pertama adalah yang paling lama
+                const oldestKey = this.stringCache.keys().next().value;
+                this.stringCache.delete(oldestKey);
+            }
+
+            // 4. Fetch dan Simpan
             const val = await fetcher();
-            this.stringCache[key] = { time: now, value: val };
+            this.stringCache.set(key, { time: now, value: val });
             return val;
         };
 
@@ -284,12 +304,24 @@ export class Prompter {
                 await this._saveLog(prompt, messages, generation, 'conversation');
 
             } catch (error) {
-                console.error('Error during message generation or file writing:', error);
+                console.error('Error during message generation or file writing:', error.message || error);
 
-                // FIXED: Tambahkan Exponential Backoff untuk mencegah spam Rate Limit (Bug #43)
-                if (i < 2) { // Jangan delay di percobaan terakhir
+                // FIXED: Filter Error Fatal (Non-Retryable) agar tidak membuang kuota/waktu
+                // Cek status code dari berbagai format library (Axios, Fetch, SDK)
+                const status = error.status || error.response?.status || error.code || error.statusCode;
+
+                // 400: Bad Request, 401: Unauthorized, 403: Forbidden, 404: Not Found, 422: Unprocessable Entity
+                const fatalCodes = [400, 401, 403, 404, 422];
+
+                if (fatalCodes.includes(status) || String(error).includes('API key')) {
+                    console.error(`[Prompter] 🚨 FATAL API ERROR (${status}). Membatalkan retry untuk mencegah pemblokiran atau pemborosan.`);
+                    return ''; // Langsung keluar, jangan di-retry!
+                }
+
+                // Error dianggap Retryable (misal: 429 Rate Limit, 502/503/504 Server Error, atau Timeout)
+                if (i < 2) {
                     const backoffTime = 2000 * Math.pow(2, i); // 2s, 4s
-                    console.warn(`[Prompter] API Error/Rate Limit. Retrying in ${backoffTime}ms... (Attempt ${i + 1}/3)`);
+                    console.warn(`[Prompter] ⚠️ Temporary API Error/Rate Limit (${status || 'Network'}). Retrying in ${backoffTime}ms... (Attempt ${i + 1}/3)`);
                     await new Promise(resolve => setTimeout(resolve, backoffTime));
                 }
                 continue;

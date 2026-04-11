@@ -634,12 +634,40 @@
     </div>
 
     <script>
-        // FIXED: Kirim kredensial agar Web UI tidak diblokir Mindserver (Security Patch)
-        const AUTH_TOKEN = "mindcraft_super_secret_123"; // Harus sama persis dengan server
-        const socket = io({
-            path: window.location.pathname + 'socket.io',
-            auth: {
-                token: AUTH_TOKEN
+        // Token rahasia DIHAPUS dari Javascript agar tidak dicuri via Inspect Element / DevTools
+        const socket = io({ path: window.location.pathname + 'socket.io' });
+
+        socket.on('connect_error', async (err) => {
+            if (err.message.includes('Authentication error')) {
+                // Jika belum login, minta password via HTTP POST
+                const userToken = prompt("Enter Mindcraft Admin Password:");
+                if (!userToken) return;
+
+                try {
+                    const response = await fetch('/api/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: userToken })
+                    });
+
+                    const result = await response.json();
+                    if (result.success) {
+                        // Jika benar, browser otomatis menyimpan Cookie. Refresh agar konek.
+                        window.location.reload();
+                    } else {
+                        alert("Password Salah!");
+                    }
+                } catch (e) {
+                    alert("Koneksi ke server gagal.");
+                }
+            }
+        });
+
+        // Tambahkan handler jika token yang dimasukkan salah
+        socket.on('connect_error', (err) => {
+            if (err.message.includes('Authentication error')) {
+                alert("Password Salah! Harap muat ulang (refresh) halaman untuk mencoba lagi.");
+                updateStatus(false);
             }
         });
         const agentsDiv = document.getElementById('agents');

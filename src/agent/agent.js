@@ -24,10 +24,15 @@ export class Agent {
     async start(load_mem = false, init_message = null, count_id = 0) {
         this.last_sender = null;
         this.count_id = count_id;
-        this._disconnectHandled = false;
 
-        this.lastMessageContent = "";
-        this.lastMessageTime = 0;
+        // FIXED: State Management Terpusat
+        this.flags = {
+            disconnectHandled: false,
+            shutUp: false
+        };
+
+        // Menggunakan Map dari patch keamanan Rate Limit sebelumnya
+        this.messageRateLimit = new Map();
 
         loadSavedSkills();
 
@@ -82,11 +87,24 @@ export class Agent {
 
         // Connection Handler
         const onDisconnect = (event, reason) => {
-            if (this._disconnectHandled) return;
-            this._disconnectHandled = true;
+            if (this.flags.disconnectHandled) return;
+            this.flags.disconnectHandled = true;
+
+            // FIXED: Jinakkan zombie timeout (Memory Leak Guard)
+            if (this.bot && this.bot._positionTimeout) {
+                clearTimeout(this.bot._positionTimeout);
+                this.bot._positionTimeout = null;
+                console.log(`[System] Cleared pending position packet for ${this.name}`);
+            }
+
+            // FIXED: Bersihkan zombie heartbeat jika koneksi putus
+            if (this.heartbeatInterval) {
+                clearInterval(this.heartbeatInterval);
+                this.heartbeatInterval = null;
+                console.log(`[System] Cleared heartbeat interval for ${this.name}`);
+            }
 
             // Log and Analyze
-            // handleDisconnection handles logging to console and server
             const { type } = handleDisconnection(this.name, reason);
 
             process.exit(1);
@@ -119,6 +137,13 @@ export class Agent {
         const spawnTimeout = setTimeout(() => {
             const msg = `Bot has not spawned after ${spawnTimeoutDuration} seconds. Exiting.`;
             log(this.name, msg);
+
+            // FIXED: Pastikan heartbeat tidak mengendap jika gagal spawn
+            if (this.heartbeatInterval) {
+                clearInterval(this.heartbeatInterval);
+                this.heartbeatInterval = null;
+            }
+
             process.exit(1);
         }, spawnTimeoutDuration * 1000);
         this.bot.once('spawn', async () => {
@@ -161,6 +186,13 @@ export class Agent {
 
             } catch (error) {
                 console.error('Error in spawn event:', error);
+
+                // FIXED: Pastikan interval mati jika terjadi error asinkron di tengah proses spawn
+                if (this.heartbeatInterval) {
+                    clearInterval(this.heartbeatInterval);
+                    this.heartbeatInterval = null;
+                }
+
                 process.exit(0);
             }
         });
@@ -194,27 +226,37 @@ export class Agent {
             "Gamerule "
         ];
 
+        // FIXED: Inisialisasi Map untuk tracking Rate Limit secara terisolasi per-username
+        if (!this.userRateLimits) this.userRateLimits = new Map();
+
         const respondFunc = async (username, message) => {
             if (message === "") return;
             if (username === this.name) return;
 
-            const currentMsg = `${username}:${message}`;
             const currentTime = Date.now();
 
-            // FIXED: Rate Limiter ketat untuk mencegah spam yang membakar kuota API
-            // 1. Abaikan pesan duplikat (sama persis) dalam 5 detik terakhir
-            if (currentMsg === this.lastMessageContent && (currentTime - this.lastMessageTime) < 5000) {
-                return;
+            // FIXED: Menggunakan State Terstruktur untuk Rate Limiter
+            const normalizedMsg = message.toLowerCase().replace(/\s+/g, '');
+
+            if (!this.messageRateLimit.has(username)) {
+                this.messageRateLimit.set(username, { lastTime: 0, lastContent: "" });
             }
-            // 2. Abaikan pesan APAPUN dari siapapun jika jaraknya kurang dari 1.5 detik (Throttle)
-            if (this.lastAnyMessageTime && (currentTime - this.lastAnyMessageTime) < 1500) {
-                console.warn(`[Rate Limit] Membuang pesan beruntun dari ${username} untuk mengamankan kuota API.`);
+            const userState = this.messageRateLimit.get(username);
+
+            // 1. Deteksi duplikat ketat anti-bypass (5 detik)
+            if (normalizedMsg === userState.lastContent && (currentTime - userState.lastTime) < 5000) {
                 return;
             }
 
-            this.lastMessageContent = currentMsg;
-            this.lastMessageTime = currentTime;
-            this.lastAnyMessageTime = currentTime;
+            // 2. Rate Limit Per-User (1.5 detik)
+            if ((currentTime - userState.lastTime) < 1500) {
+                console.warn(`[Rate Limit] Membuang pesan spam beruntun dari ${username}.`);
+                return;
+            }
+
+            // Update state ke dalam sub-object
+            userState.lastContent = normalizedMsg;
+            userState.lastTime = currentTime;
 
             // --- DISCORD CLEANER OPERATION ---
             // Use the DRY helper method
@@ -238,7 +280,7 @@ export class Agent {
                 // Filter server spam messages (ClearLag, etc)
                 if (ignore_messages.some((m) => finalMessage.includes(m))) return;
 
-                this.shut_up = false;
+                this.flags.shutUp = false;
 
                 // DC USERNAMES WILL APPEAR IN THE TERMINAL
                 console.log(`${this.name} detected chat from: ${finalUsername} -> ${finalMessage}`);
@@ -338,7 +380,7 @@ export class Agent {
     }
 
     shutUp() {
-        this.shut_up = true;
+        this.flags.shutUp = true;
         if (this.self_prompter.isActive()) {
             this.self_prompter.stop(false);
         }
@@ -390,7 +432,7 @@ export class Agent {
         message = await handleEnglishTranslation(message);
         console.log('received message from', source, ':', message);
 
-        const checkInterrupt = () => this.self_prompter.shouldInterrupt(self_prompt) || this.shut_up || convoManager.responseScheduledFor(source);
+        const checkInterrupt = () => this.self_prompter.shouldInterrupt(self_prompt) || this.flags.shutUp || convoManager.responseScheduledFor(source);
 
         let behavior_log = this.bot.modes.flushBehaviorLog().trim();
         if (behavior_log.length > 0) {
@@ -476,7 +518,7 @@ export class Agent {
     }
 
     async routeResponse(to_player, message) {
-        if (this.shut_up) return;
+        if (this.flags.shutUp) return;
         let self_prompt = to_player === 'system' || to_player === this.name;
         if (self_prompt && this.last_sender) {
             // this is for when the agent is prompted by system while still in conversation
@@ -550,7 +592,7 @@ export class Agent {
         });
         // Use connection handler for runtime disconnects
         this.bot.on('end', (reason) => {
-            if (!this._disconnectHandled) {
+            if (!this.flags.disconnectHandled) {
                 const { msg } = handleDisconnection(this.name, reason);
                 this.cleanKill(msg);
             }
@@ -560,7 +602,7 @@ export class Agent {
             this.actions.stop();
         });
         this.bot.on('kicked', (reason) => {
-            if (!this._disconnectHandled) {
+            if (!this.flags.disconnectHandled) {
                 const { msg } = handleDisconnection(this.name, reason);
                 this.cleanKill(msg);
             }
