@@ -187,29 +187,21 @@ export class Agent {
     }
 
     _parseDiscordMessage(message, defaultUsername = "") {
-        let finalUsername = defaultUsername;
-        let finalMessage = message;
-
         if (!message || typeof message !== 'string') {
-            return { finalUsername, finalMessage };
+            return { finalUsername: defaultUsername, finalMessage: message };
         }
 
-
-        const discordRegex = /(?:\[.*?\]\s*)?([a-zA-Z0-9_]+)\s*(?:»|>>|>|:)\s*(.*)/;
+        const discordRegex = /^(?:(?:\[[^\]]+\]|<[^>]+>)\s*)*([a-zA-Z0-9_]{1,16})\s*(?:»|>>|>|:)\s*(.*)$/;
         const match = message.match(discordRegex);
 
         if (match) {
-            finalUsername = match[1].trim() || defaultUsername;
-            finalMessage = match[2].trim();
-        } else if (message.includes('»')) {
-
-            const parts = message.split('»');
-            const namePart = parts[0].split(']').pop();
-            finalUsername = namePart.trim() || defaultUsername;
-            finalMessage = parts.slice(1).join('»').trim();
+            return {
+                finalUsername: match[1].trim() || defaultUsername,
+                finalMessage: match[2].trim()
+            };
         }
 
-        return { finalUsername, finalMessage };
+        return { finalUsername: defaultUsername, finalMessage: message };
     }
 
     async _setupEventHandlers(save_data, init_message) {

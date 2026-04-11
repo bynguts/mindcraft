@@ -17,6 +17,8 @@ export function lockdown() {
 }
 
 export const makeCompartment = (endowments = {}) => {
+  harden(endowments);
+
   return new Compartment({
     Math,
     Date,

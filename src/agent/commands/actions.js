@@ -828,12 +828,16 @@ export function loadSavedSkills() {
                     const safeFileName = path.basename(file);
                     const rawPath = path.join(saveFolder, safeFileName);
 
-                    const filePath = fs.realpathSync(rawPath);
-                    const normalizedBase = fs.realpathSync(saveFolder);
-
-                    if (!filePath.startsWith(normalizedBase)) {
-                        console.warn(`[Security] Blocked symlink or path traversal attempt: ${file}`);
+                    let fd;
+                    let src;
+                    try {
+                        fd = fs.openSync(rawPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+                        src = fs.readFileSync(fd, 'utf8');
+                    } catch (err) {
+                        console.warn(`[Security/IO] Blocked unsafe file read on ${file} (Possible TOCTOU/Symlink):`, err.message);
                         continue;
+                    } finally {
+                        if (fd !== undefined) fs.closeSync(fd);
                     }
 
                     const commandName = safeFileName.replace('.js', '');
@@ -841,10 +845,10 @@ export function loadSavedSkills() {
                     if (!validSkills[commandName]) {
                         console.log(`[Auto-Skill] Attempting to delete orphaned/outdated zombie skill: ${safeFileName}`);
                         try {
-                            fs.unlinkSync(filePath);
+                            fs.unlinkSync(rawPath);
                             console.log(`[Auto-Skill] Successfully deleted ${safeFileName}`);
                         } catch (err) {
-                            console.warn(`[Auto-Skill] Warning: Failed to delete ${safeFileName}. File might be locked or permission denied. Error: ${err.message}`);
+                            console.warn(`[Auto-Skill] Warning: Failed to delete ${safeFileName}. File might be locked. Error: ${err.message}`);
                         }
                         continue;
                     }

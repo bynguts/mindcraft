@@ -182,11 +182,14 @@ export class Coder {
         let filename = 'current.js';
 
         let write_result = await this._writeFilePromise('.' + this.fp + filename, src);
+        const safeSkills = { ...skills };
+        const safeWorld = { ...world };
+
         const compartment = makeCompartment({
-            skills,
+            skills: safeSkills,
             log: skills.log,
-            world,
-            Vec3,
+            world: safeWorld,
+            Vec3: Vec3,
         });
         const mainFn = compartment.evaluate(src);
 

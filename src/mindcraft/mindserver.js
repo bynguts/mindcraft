@@ -65,7 +65,9 @@ export function createMindServer(host_public = false, port = 8080) {
 
         socket.on('check-rate-limit', (username, message, callback) => {
             const currentTime = Date.now();
-            const normalizedMsg = message.toLowerCase().replace(/\s+/g, '');
+            const normalizedMsg = message.toLowerCase()
+                .replace(/[^a-z0-9]/g, '')
+                .replace(/(.)\1+/g, '$1');
 
             if (!globalUserRateLimits.has(username)) {
                 globalUserRateLimits.set(username, { lastTime: 0, lastContent: "" });
