@@ -27,7 +27,6 @@ export class Coder {
     async generateCode(agent_history) {
         this.agent.bot.modes.pause('unstuck');
         lockdown();
-        // this message history is transient and only maintained in this function
         let messages = agent_history.getHistory();
         messages.push({ role: 'system', content: 'Code generation started. Write code in codeblock in your response:' });
 
@@ -50,7 +49,7 @@ export class Coder {
                         role: 'assistant',
                         content: res.substring(0, res.indexOf('!newAction'))
                     });
-                    continue; // using newaction will continue the loop
+                    continue;
                 }
 
                 if (no_code_failures >= MAX_NO_CODE) {
@@ -69,14 +68,14 @@ export class Coder {
             code = res.substring(res.indexOf('```') + 3, res.lastIndexOf('```'));
             const result = await this._stageCode(code);
 
-            // FIXED: Mencegah Null Pointer Dereference saat _stageCode gagal / LLM halusinasi
+
             if (!result) {
-                console.warn("[Coder] _stageCode mengembalikan null. Syntax invalid atau error sistem.");
+                console.warn("[Coder] _stageCode returned null. Invalid syntax or system error.");
                 messages.push({
                     role: 'system',
                     content: 'Error: Failed to stage code. The syntax might be invalid. Please check your code and try again.'
                 });
-                continue; // Skip eksekusi ke bawah dan biarkan LLM mencoba memperbaiki kodenya
+                continue;
             }
 
             const executionModule = result.func;
@@ -157,13 +156,11 @@ export class Coder {
             });
             result += 'The code contains exceptions and cannot continue execution.';
         } else {
-            return null;//no error
+            return null;
         }
 
         return result;
     }
-    // write custom code to file and import it
-    // write custom code to file and prepare for evaluation
     async _stageCode(code) {
         code = this._sanitizeCode(code);
         let src = '';
@@ -172,7 +169,6 @@ export class Coder {
 
         console.log(`Generated code: """${code}"""`);
 
-        // this may cause problems in callback functions
         code = code.replaceAll(';\n', '; if(bot.interrupt_code) {log(bot, "Code interrupted.");return;}\n');
         for (let line of code.split('\n')) {
             src += `    ${line}\n`;
@@ -180,15 +176,12 @@ export class Coder {
         let src_lint_copy = this.code_lint_template.replace('/* CODE HERE */', src);
         src = this.code_template.replace('/* CODE HERE */', src);
 
-        // FIXED: Selalu overwrite satu file statis untuk mencegah disk leak jika crash
-        // Tetap increment file_counter sebagai "flag" penanda sukses untuk dibaca oleh actions.js
+
+
         this.file_counter++;
         let filename = 'current.js';
 
         let write_result = await this._writeFilePromise('.' + this.fp + filename, src);
-        // This is where we determine the environment the agent's code should be exposed to.
-        // It will only have access to these things, (in addition to basic javascript objects like Array, Object, etc.)
-        // Note that the code may be able to modify the exposed objects.
         const compartment = makeCompartment({
             skills,
             log: skills.log,
@@ -217,7 +210,6 @@ export class Coder {
     }
 
     _writeFilePromise(filename, src) {
-        // makes it so we can await this function
         return new Promise((resolve, reject) => {
             writeFile(filename, src, (err) => {
                 if (err) {

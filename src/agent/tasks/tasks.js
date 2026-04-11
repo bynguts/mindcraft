@@ -4,10 +4,9 @@ import { getPosition } from '../library/world.js';
 import { ConstructionTaskValidator, Blueprint } from './construction_tasks.js';
 import { CookingTaskInitiator } from './cooking_tasks.js';
 
-// FIXED: Use dynamic file paths based on taskId to prevent overwrite conflicts
+
 const hellsKitchenProgressManager = {
     getProgressFile: function (taskId) {
-        // Memastikan setiap task punya file progress-nya sendiri
         return `./bots/hells_kitchen_progress_${taskId}.json`;
     },
 
@@ -40,20 +39,18 @@ const hellsKitchenProgressManager = {
     },
 
     updateAgentProgress: function (taskId, agentId, isComplete) {
-        const progress = this.readProgress(taskId); // FIXED: Pass taskId to read
+        const progress = this.readProgress(taskId);
 
-        // If it's a different task, reset first
         if (progress.taskId !== taskId) {
             progress.taskId = taskId;
             progress.agent0Complete = false;
             progress.agent1Complete = false;
         }
 
-        // Update the specific agent's status
         if (agentId === 0) progress.agent0Complete = isComplete;
         if (agentId === 1) progress.agent1Complete = isComplete;
 
-        this.writeProgress(taskId, progress); // FIXED: Pass taskId to write
+        this.writeProgress(taskId, progress);
         return progress;
     },
 
@@ -64,15 +61,6 @@ const hellsKitchenProgressManager = {
     }
 };
 
-
-//todo: modify validator code to return an object with valid and score -> do more testing hahah
-//todo: figure out how to log these things to the same place as bots/histories
-// export class CraftTaskValidator {
-//     constructor(data, agent) {
-//         this.target = data.target;
-//         this.number_of_target = data.number_of_target;
-//         this.agent = agent;
-
 /**
  * Validates the presence of required items in an agent's inventory
  * @param {Object} data - Task data containing target and quantity information
@@ -82,44 +70,32 @@ const hellsKitchenProgressManager = {
 function checkItemPresence(data, agent) {
 
     try {
-        // Special handling for hells_kitchen tasks
         if (data.task_id && data.task_id.endsWith('hells_kitchen') && Array.isArray(data.target) && data.target.length === 2) {
 
-            // Get agent ID and target for this agent
             const agentId = agent.count_id;
 
             if (agentId === 0 || agentId === 1) {
-                // Use only the corresponding element from the target list
                 const targetForThisAgent = data.target[agentId];
                 const modifiedData = {
                     ...data,
                     target: targetForThisAgent
                 };
 
-                // Check if this agent has their required item
                 const agentResult = checkItemForSingleAgent(modifiedData, agent);
 
-                // Update the file-based progress tracker
                 const progress = hellsKitchenProgressManager.updateAgentProgress(
                     data.task_id,
                     agentId,
                     agentResult.success
                 );
 
-                // // Log the current state
-                // console.log(`Agent ${agentId} has item: ${agentResult.success}`);
-                // console.log(`Task state: Agent0=${progress.agent0Complete}, Agent1=${progress.agent1Complete}`);
-
-                // Return combined result - success only if both agents have their items
                 return {
                     success: progress.agent0Complete && progress.agent1Complete,
                     missingItems: agentResult.missingItems,
-                    agentComplete: agentResult.success  // Individual agent status for debugging
+                    agentComplete: agentResult.success
                 };
             }
         }
-
-        // Non-hells_kitchen tasks use the standard check
         return checkItemForSingleAgent(data, agent);
 
     } catch (error) {
@@ -176,15 +152,12 @@ function checkItemForSingleAgent(data, agent) {
         throw new Error('Invalid number_of_target format');
     }
 
-    // First normalize targets to always have a consistent format
     const targets = normalizeTargets(data.target);
 
-    // Determine the required quantities
     const requiredQuantities = isTargetDictionaryWithQuantities(data.target)
         ? data.target
         : normalizeQuantities(targets, data.number_of_target);
 
-    // Count items in inventory
     const inventoryCount = {};
     agent.bot.inventory.slots.forEach((slot) => {
         if (slot) {
@@ -193,7 +166,6 @@ function checkItemForSingleAgent(data, agent) {
         }
     });
 
-    // Check if all required items are present in sufficient quantities
     const missingItems = [];
     let allTargetsMet = true;
 
@@ -260,7 +232,6 @@ export class Task {
             console.log('Starting task', task_data.task_id);
             console.log("Task start time set to", this.taskStartTime);
             if (task_data.task_id.endsWith('hells_kitchen')) {
-                // Reset hells_kitchen progress when a new task starts
                 hellsKitchenProgressManager.resetTask(task_data.task_id);
                 console.log('Reset Hells Kitchen progress for new task');
             }
@@ -275,16 +246,6 @@ export class Task {
                 this.conversation = this.data.conversation;
             }
             this.taskTimeout = this.data.timeout || 300;
-            // Set validator based on task_type
-
-            // do goal initialization here
-
-            // let agentGoal = this.getAgentGoal();
-            // if (agentGoal) {
-            //     agentGoal += "You have to collaborate with other agents/bots, namely " + this.available_agents.filter(n => n !== this.name).join(', ') + " to complete the task as soon as possible by dividing the work among yourselves.";
-            //     console.log(`Setting goal for agent ${this.agent.count_id}: ${agentGoal}`);
-            //     await executeCommand(this.agent, `!goal("${agentGoal}")`);
-            // }
 
             if (this.task_type === 'construction') {
                 this.validator = new ConstructionTaskValidator(this.data, this.agent);
@@ -571,7 +532,6 @@ export class Task {
         }
 
         if (this.data.agent_count && this.data.agent_count > 1) {
-            // TODO wait for other bots to join
             await new Promise((resolve) => setTimeout(resolve, 10000));
             if (this.available_agents.length < this.data.agent_count) {
                 console.log(`Missing ${this.data.agent_count - this.available_agents.length} bot(s).`);
@@ -580,7 +540,6 @@ export class Task {
         }
 
         if (this.data.type === 'construction') {
-            //Ensures construction is cleaned out first. -> relies on cheats which are turned off?
             if (this.blueprint) {
                 console.log('Cleaning out construction blueprint');
                 const result = this.blueprint.autoDelete();

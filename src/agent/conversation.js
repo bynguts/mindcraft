@@ -31,7 +31,6 @@ class Conversation {
         const full_message = _compileInMessages(this);
         if (full_message.message.trim().length > 0)
             agent.history.add(this.name, full_message.message);
-        // add the full queued messages to history, but don't respond
 
         if (agent.last_sender === this.name)
             agent.last_sender = null;
@@ -69,7 +68,7 @@ class ConversationManager {
         this.connection_monitor = setInterval(() => {
             if (!this.activeConversation) {
                 this._stopMonitor();
-                return; // will clean itself up
+                return;
             }
 
             let delta = Date.now() - last_time;
@@ -89,7 +88,7 @@ class ConversationManager {
                 wait_time = 0;
             }
 
-            // FIXED: Fail-fast jika agen lain terdeteksi mati oleh Mindserver (Bug #34)
+
             if (!this.otherAgentInGame(convo_partner)) {
                 this._clearMonitorTimeouts();
                 if (!agent.self_prompter.isPaused()) {
@@ -176,7 +175,6 @@ class ConversationManager {
         if (convo.ignore_until_start && !received.start)
             return;
 
-        // check if any convo is active besides the sender
         if (this.inConversation() && !this.inConversation(sender)) {
             this.sendToBot(sender, `I'm talking to someone else, try again later. !endConversation("${sender}")`, false, false);
             this.endConversation(sender);
@@ -191,7 +189,6 @@ class ConversationManager {
         this._clearMonitorTimeouts();
         convo.queue(received);
 
-        // responding to conversation takes priority over self prompting
         if (agent.self_prompter.isActive()) {
             await agent.self_prompter.pause();
         }
@@ -283,17 +280,13 @@ async function _scheduleProcessInMessage(sender, received, convo) {
     const scheduleResponse = (delay) => convo.inMessageTimer = setTimeout(() => _processInMessageQueue(sender), delay);
 
     if (!agent.isIdle() && otherAgentBusy) {
-        // both are busy
         let canTalkOver = talkOverActions.some(a => agent.actions.currentActionLabel.includes(a));
         if (canTalkOver)
             scheduleResponse(fastDelay)
-        // otherwise don't respond
     }
     else if (otherAgentBusy)
-        // other bot is busy but I'm not
         scheduleResponse(longDelay);
     else if (!agent.isIdle()) {
-        // I'm busy but other bot isn't
         let canTalkOver = talkOverActions.some(a => agent.actions.currentActionLabel.includes(a));
         if (canTalkOver) {
             scheduleResponse(fastDelay);
@@ -306,7 +299,6 @@ async function _scheduleProcessInMessage(sender, received, convo) {
         }
     }
     else {
-        // neither are busy
         scheduleResponse(fastDelay);
     }
 }
@@ -337,7 +329,7 @@ function _handleFullInMessage(sender, received) {
     if (received.end) {
         convoManager.endConversation(sender);
         message = `Conversation with ${sender} ended with message: "${message}"`;
-        sender = 'system'; // bot will respond to system instead of the other bot
+        sender = 'system';
     }
     else if (received.start)
         agent.shut_up = false;

@@ -634,42 +634,8 @@
     </div>
 
     <script>
-        // Token rahasia DIHAPUS dari Javascript agar tidak dicuri via Inspect Element / DevTools
         const socket = io({ path: window.location.pathname + 'socket.io' });
 
-        socket.on('connect_error', async (err) => {
-            if (err.message.includes('Authentication error')) {
-                // Jika belum login, minta password via HTTP POST
-                const userToken = prompt("Enter Mindcraft Admin Password:");
-                if (!userToken) return;
-
-                try {
-                    const response = await fetch('/api/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ password: userToken })
-                    });
-
-                    const result = await response.json();
-                    if (result.success) {
-                        // Jika benar, browser otomatis menyimpan Cookie. Refresh agar konek.
-                        window.location.reload();
-                    } else {
-                        alert("Password Salah!");
-                    }
-                } catch (e) {
-                    alert("Koneksi ke server gagal.");
-                }
-            }
-        });
-
-        // Tambahkan handler jika token yang dimasukkan salah
-        socket.on('connect_error', (err) => {
-            if (err.message.includes('Authentication error')) {
-                alert("Password Salah! Harap muat ulang (refresh) halaman untuk mencoba lagi.");
-                updateStatus(false);
-            }
-        });
         const agentsDiv = document.getElementById('agents');
         let settingsSpec = {};
         let profileData = null;
@@ -694,12 +660,10 @@
         function subscribeToState() {
             socket.emit('listen-to-agents');
         }
-        // Initial status
         updateStatus(false);
         socket.on('connect', () => {
             updateStatus(true);
             subscribeToState();
-            // Clear all cached settings on reconnect
             Object.keys(agentSettings).forEach(name => delete agentSettings[name]);
         });
         socket.on('disconnect', () => {
@@ -719,12 +683,11 @@
         function buildSettingsForm() {
             const form = document.getElementById('settingsForm');
             form.innerHTML = '';
-            // ensure grid for multi-column layout
             form.style.display = 'grid';
             form.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
             form.style.gap = '8px';
             Object.keys(settingsSpec).forEach(key => {
-                if (key === 'profile') return; // profile handled via upload
+                if (key === 'profile') return;
                 const cfg = settingsSpec[key];
                 const wrapper = document.createElement('div');
                 wrapper.className = 'setting-wrapper';
@@ -802,7 +765,6 @@
                 if (!res.success) {
                     document.getElementById('createError').textContent = res.error || 'Unknown error';
                 } else {
-                    // reset on success
                     profileData = null;
                     document.getElementById('submitCreateAgentBtn').disabled = true;
                     document.getElementById('profileStatus').textContent = 'Profile: Not uploaded';
@@ -812,7 +774,6 @@
             });
         });
 
-        // Modal open/close logic
         const modalBackdrop = document.getElementById('createAgentModal');
         document.getElementById('openCreateAgentBtn').addEventListener('click', () => {
             buildSettingsForm();
@@ -831,7 +792,6 @@
             }
         });
 
-        // Subscribe to aggregated state updates (re-sent on each connect)
         socket.on('state-update', (states) => {
             window.lastStates = states;
             Object.keys(states || {}).forEach(name => {
@@ -905,7 +865,6 @@
             });
         }
 
-        // Agent settings modal logic
         const agentSettingsModal = document.getElementById('agentSettingsModal');
         const agentSettingsForm = document.getElementById('agentSettingsForm');
         const applyBtn = document.getElementById('applyAgentSettingsBtn');
@@ -921,7 +880,7 @@
             agentSettingsForm.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
             agentSettingsForm.style.gap = '8px';
             Object.keys(settingsSpec).forEach(key => {
-                if (key === 'profile') return; // profile not edited here
+                if (key === 'profile') return;
                 const cfg = settingsSpec[key];
                 const wrapper = document.createElement('div');
                 wrapper.className = 'setting-wrapper';
@@ -1033,7 +992,6 @@
             if (!currentAgentName) return;
             const edited = getEditedAgentSettings();
             socket.emit('set-agent-settings', currentAgentName, edited);
-            // Update local settings immediately
             agentSettings[currentAgentName] = { ...edited, fetched: true };
             updateAgentViewer(currentAgentName);
             closeAgentSettings();
@@ -1096,10 +1054,8 @@
                 return;
             }
 
-            // If agentsDiv is empty, do a full render
             if (!agentsDiv.children.length) {
                 agentsDiv.innerHTML = agents.map(agent => renderAgentCard(agent)).join('');
-                // Update all viewers after initial render
                 setTimeout(() => {
                     agents.forEach(a => {
                         if (a.in_game) updateAgentViewer(a.name);
@@ -1108,28 +1064,23 @@
                 return;
             }
 
-            // Compare with current agents to find changes
             const prevAgents = currentAgents.reduce((acc, a) => ({ ...acc, [a.name]: a }), {});
             const changedAgents = agents.filter(a => {
                 const prev = prevAgents[a.name];
                 return !prev || prev.in_game !== a.in_game || prev.viewerPort !== a.viewerPort || prev.socket_connected !== a.socket_connected;
             });
 
-            // Update only changed agents
             changedAgents.forEach(agent => {
                 const el = document.getElementById(`agent-${agent.name}`);
                 if (el) {
-                    // Update existing card
                     el.outerHTML = renderAgentCard(agent);
                     if (agent.in_game) updateAgentViewer(agent.name);
                 } else {
-                    // Add new card
                     agentsDiv.insertAdjacentHTML('beforeend', renderAgentCard(agent));
                     if (agent.in_game) updateAgentViewer(agent.name);
                 }
             });
 
-            // Remove cards for agents that no longer exist
             Array.from(agentsDiv.children).forEach(el => {
                 const name = el.id.replace('agent-', '');
                 if (!agents.find(a => a.name === name)) {
@@ -1140,7 +1091,6 @@
         }
 
         socket.on('agents-status', async (agents) => {
-            // Fetch settings for all agents that don't have current settings
             const needSettings = agents.filter(a => !agentSettings[a.name]);
             if (needSettings.length > 0) {
                 await Promise.all(needSettings.map(async (a) => {
@@ -1151,20 +1101,16 @@
                 }));
             }
 
-            // Compare with current agents to find changes
             const prevAgents = currentAgents.reduce((acc, a) => ({ ...acc, [a.name]: a }), {});
             const changedAgents = agents.filter(a => {
                 const prev = prevAgents[a.name];
                 return !prev || prev.in_game !== a.in_game || prev.viewerPort !== a.viewerPort || prev.socket_connected !== a.socket_connected;
             });
 
-            // Update current agents list
             currentAgents = agents;
 
-            // If agentsDiv is empty, do a full render
             if (!agentsDiv.children.length) {
                 agentsDiv.innerHTML = agents.map(agent => renderAgentCard(agent)).join('');
-                // Update all viewers after initial render
                 setTimeout(() => {
                     agents.forEach(a => {
                         if (a.in_game) updateAgentViewer(a.name);
@@ -1173,21 +1119,17 @@
                 return;
             }
 
-            // Update only changed agents
             changedAgents.forEach(agent => {
                 const el = document.getElementById(`agent-${agent.name}`);
                 if (el) {
-                    // Update existing card
                     el.outerHTML = renderAgentCard(agent);
                     if (agent.in_game) updateAgentViewer(agent.name);
                 } else {
-                    // Add new card
                     agentsDiv.insertAdjacentHTML('beforeend', renderAgentCard(agent));
                     if (agent.in_game) updateAgentViewer(agent.name);
                 }
             });
 
-            // Remove cards for agents that no longer exist
             Array.from(agentsDiv.children).forEach(el => {
                 const name = el.id.replace('agent-', '');
                 if (!agents.find(a => a.name === name)) {
@@ -1204,7 +1146,6 @@
             if (btn) {
                 btn.textContent = 'Connecting...';
                 btn.disabled = true;
-                // Re-enable after 10s if still disabled (agent failed to connect)
                 setTimeout(() => {
                     const retryBtn = document.querySelector(`button[onclick=\\"startAgent('${n}')\\"]`);
                     const agentState = (window.currentAgents || []).find(a => a.name === n);

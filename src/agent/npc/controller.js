@@ -66,23 +66,18 @@ export class NPCContoller {
         }
 
         this.agent.bot.on('idle', async () => {
-            // FIXED: Wrap event handler dalam try-catch agar silent error (unhandled promise rejection) bisa terlacak
             try {
                 if (this.data.goals.length === 0 && !this.data.curr_goal) return;
 
-                // Wait a while for inputs before acting independently
                 await new Promise((resolve) => setTimeout(resolve, 5000));
                 if (!this.agent.isIdle()) return;
 
-                // Persue goal
                 if (!this.agent.actions.resume_func) {
-                    // FIXED: Pastikan fungsi async di-await agar errornya tertangkap oleh blok catch
                     await this.executeNext();
                     await this.agent.history.save();
                 }
             } catch (err) {
                 console.error('[NPCController] 🚨 Critical Error in idle event handler:', err);
-                // Pastikan bot tetap mereset state agar tidak terjebak (stuck)
                 this.agent.bot.clearControlStates();
             }
         });
@@ -118,26 +113,21 @@ export class NPCContoller {
         });
 
         if (!this.data.do_routine || this.agent.bot.time.timeOfDay < 13000) {
-            // Exit any buildings
             let building = this.currentBuilding();
             if (building == this.data.home) {
                 let door_pos = this.getBuildingDoor(building);
                 if (door_pos) {
                     await this.agent.actions.runAction('npc:exitBuilding', async () => {
                         await skills.useDoor(this.agent.bot, door_pos);
-                        await skills.moveAway(this.agent.bot, 2); // If the bot is too close to the building it will try to enter again
+                        await skills.moveAway(this.agent.bot, 2);
                     });
                 }
             }
-
-            // Work towards goals
             await this.executeGoal();
 
         } else {
-            // Reset goal at the end of the day
             this.data.curr_goal = null;
 
-            // Return to home
             let building = this.currentBuilding();
             if (this.data.home !== null && (building === null || building != this.data.home)) {
                 let door_pos = this.getBuildingDoor(this.data.home);
@@ -146,7 +136,6 @@ export class NPCContoller {
                 });
             }
 
-            // Go to bed
             await this.agent.actions.runAction('npc:bed', async () => {
                 await skills.goToBed(this.agent.bot);
             });
@@ -157,7 +146,6 @@ export class NPCContoller {
     }
 
     async executeGoal() {
-        // If we need more blocks to complete a building, get those first
         let goals = this.temp_goals.concat(this.data.goals);
         if (this.data.curr_goal)
             goals = goals.concat([this.data.curr_goal])
@@ -166,7 +154,7 @@ export class NPCContoller {
         let acted = false;
         for (let goal of goals) {
 
-            // Obtain goal item or block
+
             if (this.constructions[goal.name] === undefined) {
                 if (!itemSatisfied(this.agent.bot, goal.name, goal.quantity)) {
                     let res = await this.item_goal.executeNext(goal.name, goal.quantity);
@@ -176,7 +164,6 @@ export class NPCContoller {
                 }
             }
 
-            // Build construction goal
             else {
                 let res = null;
                 if (this.data.built.hasOwnProperty(goal.name)) {
@@ -256,7 +243,7 @@ export class NPCContoller {
 
         let sizex = this.constructions[name].blocks[0][0].length;
         let sizez = this.constructions[name].blocks[0].length;
-        let orientation = 4 - this.data.built[name].orientation; // this conversion is opposite
+        let orientation = 4 - this.data.built[name].orientation;
         if (orientation == 4) orientation = 0;
         [door_x, door_z] = rotateXZ(door_x, door_z, orientation, sizex, sizez);
         door_y += this.constructions[name].offset;

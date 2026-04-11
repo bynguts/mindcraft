@@ -1,6 +1,8 @@
 import { Agent } from '../agent/agent.js';
 import { serverProxy } from '../agent/mindserver_proxy.js';
 import yargs from 'yargs';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const args = process.argv.slice(2);
 if (args.length < 1) {

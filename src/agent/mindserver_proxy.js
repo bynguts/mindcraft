@@ -2,24 +2,14 @@ import { io } from 'socket.io-client';
 import convoManager from './conversation.js';
 import { setSettings } from './settings.js';
 import { getFullState } from './library/full_state.js';
-import dotenv from 'dotenv';
-dotenv.config();
 
 // agent's individual connection to the mindserver
 // always connect to localhost
 
 class MindServerProxy {
     constructor() {
-        // FIXED: Tambahkan blok auth agar Agen membawa password 'gintoki' saat konek
-        this.socket = io(process.env.MINDSERVER_URL || 'http://localhost:8080', {
-            auth: {
-                token: process.env.MINDCRAFT_SECRET // KUNCINYA DI SINI!
-            },
-            reconnection: true,
-            reconnectionAttempts: 5
-        });
-
-        this._setupListeners();
+        this.socket = null;
+        this.connected = false;
     }
 
     async connect(name, port) {
@@ -27,14 +17,7 @@ class MindServerProxy {
 
         this.name = name;
 
-        // FIXED: Bawa token rahasia agar agen tidak diblokir oleh MindServer (Security Patch)
-        const AUTH_TOKEN = process.env.MINDCRAFT_SECRET || "mindcraft_super_secret_123";
-
-        this.socket = io(`http://127.0.0.1:${port}`, {
-            auth: {
-                token: process.env.MINDCRAFT_SECRET
-            }
-        });
+        this.socket = io(`http://127.0.0.1:${port}`);
 
         await new Promise((resolve, reject) => {
             this.socket.on('connect', resolve);
@@ -91,13 +74,12 @@ class MindServerProxy {
             }
         });
 
-        // Request settings and wait for response
         await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error('Settings request timed out after 5 seconds'));
             }, 5000);
 
-            this.socket.emit('get-settings', name, (response) => {
+            this.socket.emit('get-settings', name, true, (response) => {
                 clearTimeout(timeout);
                 if (response.error) {
                     return reject(new Error(response.error));
@@ -122,11 +104,26 @@ class MindServerProxy {
     }
 
     login() {
-        this.socket.emit('login-agent', this.agent.name);
+        if (this.socket) {
+            this.socket.emit('login-agent', this.agent.name);
+        }
     }
 
     shutdown() {
-        this.socket.emit('shutdown');
+        if (this.socket) {
+            this.socket.emit('shutdown');
+        }
+    }
+
+    checkRateLimit(username, message) {
+        return new Promise((resolve) => {
+            if (!this.socket || !this.connected) return resolve(true);
+            const timeout = setTimeout(() => resolve(true), 1000);
+            this.socket.emit('check-rate-limit', username, message, (response) => {
+                clearTimeout(timeout);
+                resolve(response.allowed);
+            });
+        });
     }
 
     getSocket() {
@@ -134,15 +131,16 @@ class MindServerProxy {
     }
 }
 
-// Create and export a singleton instance
 export const serverProxy = new MindServerProxy();
 
-// for chatting with other bots
 export function sendBotChatToServer(agentName, json) {
-    serverProxy.getSocket().emit('chat-message', agentName, json);
+    if (serverProxy.getSocket()) {
+        serverProxy.getSocket().emit('chat-message', agentName, json);
+    }
 }
 
-// for sending general output to server for display
 export function sendOutputToServer(agentName, message) {
-    serverProxy.getSocket().emit('bot-output', agentName, message);
+    if (serverProxy.getSocket()) {
+        serverProxy.getSocket().emit('bot-output', agentName, message);
+    }
 }

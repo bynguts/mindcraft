@@ -217,35 +217,28 @@ export class CookingTaskInitiator {
         const width = 10;
         const depth = 10;
         const height = 5;
-
-        // FIXED: Menggunakan System Message Acknowledgment untuk mencegah False Positive dari chat player
         let hasPermission = true;
         const permissionListener = (jsonMsg, position) => {
-            // Filter absolut: Hanya proses pesan 'system' (dari server API). Abaikan 'chat' (dari pemain).
             if (position === 'chat') return;
 
             const text = jsonMsg.toString().toLowerCase();
 
-            // Cek keyword penolakan standar dari server
             if (text.includes('permission') || text.includes('unknown command') || text.includes('error')) {
                 hasPermission = false;
             }
         };
 
-        // Pasang pendengar chat sistem sementara
         this.bot.on('message', permissionListener);
 
         try {
-            // Tembakkan 1 blok pertama sebagai umpan tester
             await this.bot.chat(`/setblock ${startX} ${startY} ${startZ} stone_bricks`);
-            await new Promise(resolve => setTimeout(resolve, 400)); // Tunggu respons server sebentar
+            await new Promise(resolve => setTimeout(resolve, 400));
 
             if (!hasPermission) {
-                console.error('[CookingTasks] Batal membangun rumah: Bot tidak memiliki izin (No Permission) untuk menggunakan /setblock.');
-                return false; // Langsung keluar, selamatkan server dari 500+ command spam
+                console.error('[CookingTasks] Abort building house: Bot does not have permission (No Permission) to use /setblock.');
+                return false;
             }
 
-            // Foundation and walls
             for (let x = startX; x <= startX + depth; x++) {
                 for (let y = startY; y <= startY + height; y++) {
                     for (let z = startZ; z <= startZ + width; z++) {
@@ -282,12 +275,9 @@ export class CookingTaskInitiator {
                 }
             }
 
-            // Entrance features
             const doorZ = startZ + Math.floor(width / 2);
             await this.bot.chat(`/setblock ${startX + depth - 1} ${startY} ${doorZ} stone_brick_stairs[facing=west]`);
             await this.bot.chat(`/setblock ${startX + depth} ${startY} ${doorZ} air`);
-
-            // Roof construction
             for (let i = 0; i < 3; i++) {
                 for (let x = startX + i; x <= startX + depth - i; x++) {
                     for (let z = startZ + i; z <= startZ + width - i; z++) {
@@ -299,7 +289,6 @@ export class CookingTaskInitiator {
                 }
             }
 
-            // Interior items
             await this.bot.chat(`/setblock ${startX + 4} ${startY + 1} ${startZ + 3} crafting_table`);
             await this.bot.chat(`/setblock ${startX + 4} ${startY + 1} ${startZ + 5} furnace`);
             await this.bot.chat(`/data merge block ${startX + 4} ${startY + 1} ${startZ + 5} {Items:[{Slot:1b,id:"minecraft:coal",Count:64b}]}`)
@@ -310,10 +299,9 @@ export class CookingTaskInitiator {
             await new Promise(resolve => setTimeout(resolve, 300));
             return true;
         } catch (err) {
-            console.error('[CookingTasks] Terjadi error asinkron saat buildHouse:', err);
+            console.error('[CookingTasks] Asynchronous error occurred during buildHouse:', err);
             return false;
         } finally {
-            // FIXED: Wajib selalu menghapus listener di blok finally agar RAM tidak bocor (Memory Leak Guard)
             this.bot.removeListener('message', permissionListener);
         }
     }

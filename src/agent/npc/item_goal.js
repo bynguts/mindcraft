@@ -160,7 +160,6 @@ class ItemNode {
             await skills.smeltItem(this.manager.agent.bot, to_smelt_name, to_smelt_quantity);
         } else if (this.type === 'hunt') {
             for (let i = 0; i < quantity; i++) {
-                // FIXED: Declare 'res' with let to avoid ReferenceError in strict mode
                 let res = await skills.attackNearest(this.manager.agent.bot, this.source);
                 if (!res || this.manager.agent.bot.interrupt_code)
                     break;
@@ -294,7 +293,6 @@ class ItemWrapper {
 
 
 export class ItemGoal {
-    // FIXED: Added 'data' parameter to properly receive and store NPC profile data
     constructor(agent, data) {
         this.agent = agent;
         this.data = data;
@@ -308,7 +306,6 @@ export class ItemGoal {
             this.nodes[item_name] = new ItemWrapper(this, null, item_name);
         this.goal = this.nodes[item_name];
 
-        // Get next goal to execute
         let next_info = this.goal.getNext(item_quantity);
         if (!next_info) {
             console.log(`Invalid item goal ${this.goal.name}`);
@@ -317,12 +314,9 @@ export class ItemGoal {
         let next = next_info.node;
         let quantity = next_info.quantity;
 
-        // Prevent unnecessary attempts to obtain blocks that are not nearby
         if (next.type === 'block' && !world.getNearbyBlockTypes(this.agent.bot).includes(next.source) ||
             next.type === 'hunt' && !world.getNearbyEntityTypes(this.agent.bot).includes(next.source)) {
             next.fails += 1;
-
-            // If the bot has failed to obtain the block before, explore
             if (this.failed.includes(next.name)) {
                 this.failed = this.failed.filter((item) => item !== next.name);
                 await this.agent.actions.runAction('itemGoal:explore', async () => {
@@ -336,18 +330,15 @@ export class ItemGoal {
             return false;
         }
 
-        // Wait for the bot to be idle before attempting to execute the next goal
         if (!this.agent.isIdle())
             return false;
 
-        // Execute the next goal
         let init_quantity = world.getInventoryCounts(this.agent.bot)[next.name] || 0;
         await this.agent.actions.runAction('itemGoal:next', async () => {
             await next.execute(quantity);
         });
         let final_quantity = world.getInventoryCounts(this.agent.bot)[next.name] || 0;
 
-        // Log the result of the goal attempt
         if (final_quantity > init_quantity) {
             console.log(`Successfully obtained ${next.name} for goal ${this.goal.name}`);
         } else {

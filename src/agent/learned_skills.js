@@ -5,10 +5,9 @@ import { THRESHOLDS } from '../utils/constants.js';
 export class LearnedSkills {
     constructor(agent) {
         this.agent = agent;
-        // Use standard paths consistent with the project structure
         this.dirPath = path.join(process.cwd(), 'bots', 'saved_skills');
         this.metadataPath = path.join(this.dirPath, 'metadata.json');
-        this.vectorCachePath = path.join(this.dirPath, 'vector_cache.json'); // NEW: Dedicated vector storage
+        this.vectorCachePath = path.join(this.dirPath, 'vector_cache.json');
         this.metadata = {};
         this.vectorCache = {};
 
@@ -16,21 +15,20 @@ export class LearnedSkills {
     }
 
     init() {
-        // FIXED: Wrap directory creation in try-catch to prevent synchronous constructor crashes
-        // Handles cases where OS permissions deny folder creation
+
         try {
             if (!fs.existsSync(this.dirPath)) {
                 fs.mkdirSync(this.dirPath, { recursive: true });
             }
         } catch (err) {
             console.error(`[LearnedSkills] Critical Error: Failed to create directory at ${this.dirPath}. Permission denied? Error:`, err.message);
-            this.disabled = true; // Disable saving to prevent further crashes
+            this.disabled = true;
             return;
         }
 
         this.reload();
 
-        // FIXED: MIGRATION - Bersihkan metadata lama yang membengkak karena data.embedding
+
         let needsMigration = false;
         for (const [sName, sData] of Object.entries(this.metadata)) {
             if (sData.embedding) {
@@ -50,7 +48,7 @@ export class LearnedSkills {
     }
 
     reload() {
-        // FIXED: Pastikan metadata.json juga dibaca ulang agar success_count/fail_count tidak kereset (Bug #42)
+
         if (fs.existsSync(this.metadataPath)) {
             try {
                 this.metadata = JSON.parse(fs.readFileSync(this.metadataPath, 'utf8'));
@@ -67,16 +65,14 @@ export class LearnedSkills {
         }
     }
 
-    // FIXED: Implemented POSIX Atomic Write pattern to prevent JSON corruption during concurrent writes
+
     save() {
-        // FIXED: Do not attempt to save if initialization failed (e.g., no permissions)
+
         if (this.disabled) return;
 
         const tmpPath = `${this.metadataPath}.tmp`;
         try {
-            // Write to a temporary file first
             fs.writeFileSync(tmpPath, JSON.stringify(this.metadata, null, 4));
-            // Rename is an atomic OS operation, guaranteeing file integrity
             fs.renameSync(tmpPath, this.metadataPath);
         } catch (err) {
             console.error('[LearnedSkills] Failed to save metadata atomically:', err);
@@ -91,11 +87,11 @@ export class LearnedSkills {
         }
     }
 
-    // FIXED: Tambahkan parameter dependencies dan perbaiki urutan argumen
+
     registerSkill(skillName, description, embedding, tags = [], dependencies = []) {
         this.reload();
 
-        // 1. Simpan data ringan ke metadata
+
         this.metadata[skillName] = {
             description: description,
             tags: tags,
@@ -105,16 +101,15 @@ export class LearnedSkills {
             learned_at: new Date().toISOString()
         };
 
-        // 2. Simpan array float 1536 dimensi murni ke vector cache
+
         this.vectorCache[skillName] = embedding;
 
         this.save();
         console.log(`[LearnedSkills] Registered skill: ${skillName}`);
     }
 
-    // PHASE 3: Update performance and auto-delete low-quality skills
     updateSkillPerformance(skillName, isSuccess) {
-        this.reload(); // Sync with other agents to ensure accurate usage counts
+        this.reload();
 
         if (!this.metadata[skillName]) return;
 
@@ -128,19 +123,18 @@ export class LearnedSkills {
         const totalUses = skill.success_count + skill.fail_count;
         const successRate = skill.success_count / totalUses;
 
-        // CRITICAL LOGIC: Auto-delete if usage >= 3 and success rate < 30%
         if (totalUses >= THRESHOLDS.SKILL_MIN_USES_EVAL && successRate < THRESHOLDS.SKILL_SUCCESS_MIN) {
             console.warn(`[LearnedSkills] DELETING low-quality skill: ${skillName} (Rate: ${(successRate * 100).toFixed(1)}%)`);
 
-            // Delete the physical JS file
+
             const filePath = path.join(this.dirPath, `${skillName}.js`);
-            // FIXED: Gunakan try-catch untuk mencegah crash akibat Race Condition antar-agen
+
             try {
                 if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
                 }
             } catch (err) {
-                // Abaikan error ENOENT (file sudah terhapus oleh agen lain), log error lainnya
+
                 if (err.code !== 'ENOENT') {
                     console.error(`[LearnedSkills] Failed to delete file ${filePath}:`, err);
                 } else {
@@ -148,7 +142,6 @@ export class LearnedSkills {
                 }
             }
 
-            // Remove from metadata
             delete this.metadata[skillName];
         } else {
             console.log(`[LearnedSkills] Updated ${skillName}: Success Rate is ${(successRate * 100).toFixed(1)}% after ${totalUses} uses.`);
@@ -157,7 +150,7 @@ export class LearnedSkills {
         this.save();
     }
 
-    // FIXED: Helper untuk menghitung jarak vektor (Semantic Similarity)
+
     cosineSimilarity(vecA, vecB) {
         let dotProduct = 0, normA = 0, normB = 0;
         for (let i = 0; i < vecA.length; i++) {
@@ -169,13 +162,13 @@ export class LearnedSkills {
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
-    // FIXED: Upgrade dari Lexical Substring ke Semantic Vector Search (Bug #37) + Parallel Execution
+
     async searchRelevantSkills(query) {
         const lowerQuery = query.toLowerCase();
         let results = [];
         let queryEmbedding = null;
 
-        // 1. Ambil vektor dari user query
+
         if (this.agent.prompter && this.agent.prompter.embedding_model) {
             try {
                 queryEmbedding = await this.agent.prompter.embedding_model.embed(query);
@@ -186,7 +179,7 @@ export class LearnedSkills {
 
         let metadataChanged = false;
 
-        // 2. FIXED: Kumpulkan semua skill yang butuh embedding dan eksekusi secara PARALEL (Performance Patch)
+
         if (queryEmbedding) {
             const skillsToEmbed = [];
             for (const [skillName, data] of Object.entries(this.metadata)) {
@@ -198,8 +191,8 @@ export class LearnedSkills {
             }
 
             if (skillsToEmbed.length > 0) {
-                // FIXED: Terapkan sistem Batching/Chunking untuk mencegah serangan DoS mandiri ke API provider
-                const BATCH_SIZE = 5; // Eksekusi maksimal 5 request paralel sekaligus
+
+                const BATCH_SIZE = 5;
 
                 for (let i = 0; i < skillsToEmbed.length; i += BATCH_SIZE) {
                     const chunk = skillsToEmbed.slice(i, i + BATCH_SIZE);
@@ -218,7 +211,7 @@ export class LearnedSkills {
                         }
                     }));
 
-                    // FIXED: Backoff Delay - Beri jeda 1 detik antar batch agar API punya waktu istirahat
+
                     if (i + BATCH_SIZE < skillsToEmbed.length) {
                         await new Promise(resolve => setTimeout(resolve, 1000));
                     }
@@ -226,7 +219,7 @@ export class LearnedSkills {
             }
         }
 
-        // 3. Loop utama sekarang hanya untuk kalkulasi CPU (Sangat Cepat)
+
         for (const [skillName, data] of Object.entries(this.metadata)) {
             let score = 0;
 
@@ -237,16 +230,16 @@ export class LearnedSkills {
                 }
             }
 
-            // 4. Fallback / Hybrid Boost (Lexical Match)
+
             const matchTag = data.tags && data.tags.some(tag => tag.toLowerCase().includes(lowerQuery));
             const matchDesc = data.description && data.description.toLowerCase().includes(lowerQuery);
             const matchName = skillName.toLowerCase().includes(lowerQuery);
 
             if (matchTag || matchDesc || matchName) {
-                score += 0.3; // Boost skor kalau string-nya cocok persis
+                score += 0.3;
             }
 
-            // 5. Threshold Filter
+
             if (score > 0.75 || matchTag || matchDesc || matchName) {
                 const total = (data.success_count || 0) + (data.fail_count || 0);
                 const rate = total > 0 ? ((data.success_count || 0) / total) : 1.0;
@@ -256,12 +249,12 @@ export class LearnedSkills {
 
         if (metadataChanged) this.save();
 
-        // 6. Urutkan berdasarkan Skor Semantik tertinggi
+
         results.sort((a, b) => b.score - a.score || b.rate - a.rate || b.total - a.total);
-        return results.slice(0, 5); // Batasi top 5 skills
+        return results.slice(0, 5);
     }
 
-    // FIXED: Ubah menjadi Async karena pencarian vektor butuh waktu (Bug #37)
+
     async getFormattedSkills(query) {
         const skills = await this.searchRelevantSkills(query);
         if (skills.length === 0) return "No relevant saved skills found.";

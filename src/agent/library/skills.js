@@ -1035,30 +1035,30 @@ export async function goToGoal(bot, goal) {
         }
     }
 
-    // FIXED: Use try...finally to absolutely guarantee interval cleanup and prevent memory leaks
-    // FIXED: Pindahkan inisialisasi interval ke DALAM blok try agar cleanup terjamin 100%
+
+
     let doorCheckInterval = null;
     try {
         doorCheckInterval = startDoorInterval(bot);
         bot.pathfinder.setMovements(final_movements);
 
-        // Panggil pathfinding dan tunggu sampai selesai
+        // Call pathfinding and wait until finished
         await bot.pathfinder.goto(goal);
         return true;
     } catch (err) {
-        // Logika tambahan opsional: Tangani error pathfinding secara spesifik jika diperlukan
+
         console.log(`[Pathfinder] goToGoal failed or interrupted: ${err.message}`);
         throw err;
     } finally {
-        // Blok finally DIJAMIN dieksekusi meskipun ada return atau throw error di atas
+
         if (doorCheckInterval !== null) {
             clearInterval(doorCheckInterval);
-            doorCheckInterval = null; // Mencegah referensi menggantung
+            doorCheckInterval = null;
         }
     }
 }
 
-// FIXED: Removed global 'let _doorInterval = null;' entirely.
+
 
 function startDoorInterval(bot) {
     let prev_pos = bot.entity.position.clone();
@@ -1074,7 +1074,7 @@ function startDoorInterval(bot) {
         }
 
         if (stuck_time > 1200) {
-            // FIXED: Restored actual block checking logic for doors
+
             const doorBlocks = ['oak_door', 'spruce_door', 'birch_door', 'jungle_door', 'acacia_door', 'dark_oak_door', 'mangrove_door', 'cherry_door', 'bamboo_door', 'crimson_door', 'warped_door'];
             for (let d of doorBlocks) {
                 if (!bot.registry.blocksByName[d]) continue;
@@ -1090,7 +1090,7 @@ function startDoorInterval(bot) {
         prev_check = now;
     }, 200);
 
-    // FIXED: Return the interval ID directly to the caller
+
     return doorCheckInterval;
 }
 
@@ -2072,7 +2072,7 @@ export async function forceWalkTowards(bot, targetName, durationSec = 5) {
 }
 
 export async function rightClickBlock(bot, x, y, z) {
-    // FIXED: Removed redundant require/import. Use top-level Vec3 directly.
+
     const pos = new Vec3(x, y, z);
     const block = bot.blockAt(pos);
     const targetBlock = bot.blockAt(pos);

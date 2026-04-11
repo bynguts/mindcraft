@@ -10,15 +10,15 @@ export function lockdown() {
   if (lockeddown) return;
   lockeddown = true;
 
-  // FIXED: Hapus unsafeEval untuk mengunci global eval() dan Function()
-  // Ini mencegah LLM kabur dari Compartment sandbox (Security Patch).
-  // Catatan: Pastikan 'npx patch-package' sudah dijalankan agar protodef tidak error.
+
+
+
   globalThis.lockdown({
     localeTaming: 'unsafe',
     consoleTaming: 'unsafe',
     errorTaming: 'unsafe',
     stackFiltering: 'verbose'
-    // evalTaming secara default akan menjadi 'safeEval' (aman)
+
   });
 }
 

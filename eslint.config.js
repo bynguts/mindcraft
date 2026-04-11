@@ -1,14 +1,11 @@
-// eslint.config.js
 import globals from "globals";
 import pluginJs from "@eslint/js";
 import noFloatingPromise from "eslint-plugin-no-floating-promise";
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
-  // First, import the recommended configuration
   pluginJs.configs.recommended,
 
-  // Then override or customize specific rules
   {
     plugins: {
       "no-floating-promise": noFloatingPromise,

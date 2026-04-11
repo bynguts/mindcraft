@@ -14,7 +14,7 @@ export function getCommand(name) {
     return commandMap[name];
 }
 
-// Fitur suntik command baru secara instan (Hot-Reload)
+
 export function addCommand(command) {
     commandList.push(command);
     commandMap[command.name] = command;

@@ -1,4 +1,4 @@
-import assert from 'assert'; // FIXED: Adding missing assert import
+import assert from 'assert';
 
 export class ActionManager {
     constructor(agent) {
@@ -45,7 +45,7 @@ export class ActionManager {
 
     async _executeResume(actionLabel = null, actionFn = null, timeout = 10) {
         const new_resume = actionFn != null;
-        if (new_resume) { // start new resume
+        if (new_resume) {
             this.resume_func = actionFn;
             assert(actionLabel != null, 'actionLabel is required for new resume');
             this.resume_name = actionLabel;
@@ -73,7 +73,7 @@ export class ActionManager {
                 }
                 if (this.recent_action_counter > 3) {
                     console.warn('Fast action loop detected, cancelling resume.');
-                    this.cancelResume(); // likely cause of repetition
+                    this.cancelResume();
                 }
                 if (this.recent_action_counter > 5) {
                     console.error('Infinite action loop detected, shutting down.');
@@ -84,50 +84,37 @@ export class ActionManager {
             this.last_action_time = Date.now();
             console.log('executing code...\n');
 
-            // await current action to finish (executing=false), with 10 seconds timeout
-            // also tell agent.bot to stop various actions
             if (this.executing) {
                 console.log(`action "${actionLabel}" trying to interrupt current action "${this.currentActionLabel}"`);
             }
             await this.stop();
 
-            // clear bot logs and reset interrupt code
             this.agent.clearBotLogs();
 
             this.executing = true;
             this.currentActionLabel = actionLabel;
             this.currentActionFn = actionFn;
 
-            // timeout in minutes
             if (timeout > 0) {
                 TIMEOUT = this._startTimeout(timeout);
             }
-
-            // start the action
             await actionFn();
 
-            // mark action as finished + cleanup
             this.executing = false;
             this.currentActionLabel = '';
             this.currentActionFn = null;
             clearTimeout(TIMEOUT);
 
-            // get bot activity summary
             let output = this.getBotOutputSummary();
             let interrupted = this.agent.bot.interrupt_code;
             let timedout = this.timedout;
             this.agent.clearBotLogs();
 
-            // if not interrupted and not generating, emit idle event
             if (!interrupted) {
                 this.agent.bot.emit('idle');
             }
-
-            // return action status report
             return { success: true, message: output, interrupted, timedout };
         } catch (err) {
-            // FIXED: Hentikan aksi fisik bot di Minecraft SEBELUM mengubah state.
-            // Memanggil requestInterrupt secara langsung memastikan pathfinder & pvp langsung mati.
             this.agent.requestInterrupt();
 
             this.executing = false;
@@ -176,7 +163,7 @@ export class ActionManager {
             console.warn(`Code execution timed out after ${TIMEOUT_MINS} minutes. Attempting force stop.`);
             this.timedout = true;
             this.agent.history.add('system', `Code execution timed out after ${TIMEOUT_MINS} minutes. Attempting force stop.`);
-            await this.stop(); // last attempt to stop
+            await this.stop();
         }, TIMEOUT_MINS * 60 * 1000);
     }
 

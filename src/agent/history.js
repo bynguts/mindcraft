@@ -14,18 +14,14 @@ export class History {
 
         this.turns = [];
 
-        // Natural language memory as a summary of recent messages + previous memory
         this.memory = '';
 
-        // Maximum number of messages to keep in context before saving chunk to memory
         this.max_messages = settings.max_messages;
 
-        // Number of messages to remove from current history and save into memory
         this.summary_chunk_size = 10;
-        // chunking reduces expensive calls to promptMemSaving and appendFullHistory
     }
 
-    getHistory() { // expects an Examples object
+    getHistory() {
         return JSON.parse(JSON.stringify(this.turns));
     }
 
@@ -33,7 +29,7 @@ export class History {
         console.log("Storing memories...");
         this.memory = await this.agent.prompter.promptMemSaving(turns);
 
-        // FIXED: Proactive Auto-Compression before hitting the hard limit (Bug #38)
+
         let compressAttempts = 0;
         while (this.memory && this.memory.length > 500 && compressAttempts < 2) {
             console.log(`[History] Memory too large (${this.memory.length} chars). Triggering active auto-compression...`);
@@ -46,7 +42,6 @@ export class History {
             try {
                 let compressed = await this.agent.prompter.chat_model.sendRequest(compressMsg, "You are a highly efficient text compressor. Output ONLY the compressed text.");
 
-                // Strip out reasoning tags if using models like DeepSeek
                 if (compressed?.includes('</think>')) {
                     compressed = compressed.split('</think>')[1].trim();
                 }
@@ -58,7 +53,6 @@ export class History {
             compressAttempts++;
         }
 
-        // Fallback hard truncation just in case the LLM stubbornly refuses to shorten it
         if (this.memory && this.memory.length > 500) {
             this.memory = this.memory.slice(0, 497) + '...';
         }
@@ -67,23 +61,23 @@ export class History {
     }
 
     async appendFullHistory(to_store) {
-        // FIXED: Inisialisasi Buffer di memori
+
         if (!this._historyBuffer) {
             this._historyBuffer = [];
             this._lastFlushTime = Date.now();
         }
 
-        // Tumpuk data di memori, JANGAN langsung I/O ke disk
+
         this._historyBuffer.push(...to_store);
 
         const now = Date.now();
-        // Flush (Tulis ke disk) HANYA JIKA: ada >= 50 pesan di buffer, ATAU sudah lewat 60 detik
+
         if (this._historyBuffer.length >= 50 || now - this._lastFlushTime > 60000) {
             await this.flushHistory();
         }
     }
 
-    // FIXED: Fungsi baru untuk Bulk Write meminimalisir Bottleneck I/O (Performa Multi-Agent)
+
     async flushHistory() {
         if (!this._historyBuffer || this._historyBuffer.length === 0) return;
 
@@ -94,7 +88,7 @@ export class History {
         }
 
         try {
-            // Baca, tambah, tulis 1x saja untuk puluhan pesan
+
             const data = await fsPromises.readFile(this.full_history_fp, 'utf8');
             let full_history = JSON.parse(data);
 
@@ -102,7 +96,6 @@ export class History {
 
             await fsPromises.writeFile(this.full_history_fp, JSON.stringify(full_history, null, 4), 'utf8');
 
-            // Kosongkan buffer setelah sukses
             const writtenCount = this._historyBuffer.length;
             this._historyBuffer = [];
             this._lastFlushTime = Date.now();
@@ -126,7 +119,7 @@ export class History {
         if (this.turns.length >= this.max_messages) {
             let chunk = this.turns.splice(0, this.summary_chunk_size);
             while (this.turns.length > 0 && this.turns[0].role === 'assistant')
-                chunk.push(this.turns.shift()); // remove until turns starts with system/user message
+                chunk.push(this.turns.shift());
 
             await this.summarizeMemories(chunk);
             await this.appendFullHistory(chunk);
@@ -143,10 +136,10 @@ export class History {
                 self_prompt: this.agent.self_prompter.isStopped() ? null : this.agent.self_prompter.prompt,
                 taskStart: this.agent.task.taskStartTime,
                 last_sender: this.agent.last_sender,
-                // FIXED: Include quest board in memory persistence (Bug #39)
+
                 quests: this.agent.memory_bank.quests || []
             };
-            // FIXED: Gunakan asynchronous writeFile untuk mencegah blocking event loop
+
             await fsPromises.writeFile(this.memory_fp, JSON.stringify(data, null, 2));
             console.log('Saved memory to:', this.memory_fp);
 

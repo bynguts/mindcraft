@@ -25,30 +25,19 @@ export class Agent {
         this.last_sender = null;
         this.count_id = count_id;
 
-        console.log(`[DEBUG] Checking Secret: ${process.env.MINDCRAFT_SECRET ? 'FOUND ✅' : 'MISSING ❌'}`);
-        if (process.env.MINDCRAFT_SECRET) {
-            console.log(`[DEBUG] Secret value starts with: ${process.env.MINDCRAFT_SECRET.substring(0, 3)}...`);
-        }
-
-        // FIXED: State Management Terpusat
         this.flags = {
             disconnectHandled: false,
             shutUp: false
         };
 
-        // Menggunakan Map dari patch keamanan Rate Limit sebelumnya
-        this.messageRateLimit = new Map();
-
         loadSavedSkills();
 
-        // Initialize components
         this.actions = new ActionManager(this);
         this.prompter = new Prompter(this, settings.profile);
         this.name = (this.prompter.getName() || '').trim();
         console.log(`Initializing agent ${this.name}...`);
 
-        // Validate Name Format
-        // connection_handler now ensures the message has [LoginGuard] prefix
+
         const nameCheck = validateNameFormat(this.name);
         if (!nameCheck.success) {
             log(this.name, nameCheck.msg);
@@ -65,13 +54,12 @@ export class Agent {
         convoManager.initAgent(this);
         await this.prompter.initExamples();
 
-        // load mem first before doing task
         let save_data = null;
         if (load_mem) {
             save_data = this.history.load();
         }
 
-        // FIXED: Restore quest board state from persistent memory (Bug #39)
+
         if (save_data && save_data.quests) {
             this.memory_bank.quests = save_data.quests;
             console.log(`[Memory] Restored ${Object.keys(save_data.quests).length} active quests.`);
@@ -90,32 +78,29 @@ export class Agent {
         console.log(this.name, 'logging into minecraft...');
         this.bot = initBot(this.name);
 
-        // Connection Handler
         const onDisconnect = (event, reason) => {
             if (this.flags.disconnectHandled) return;
             this.flags.disconnectHandled = true;
 
-            // FIXED: Jinakkan zombie timeout (Memory Leak Guard)
+
             if (this.bot && this.bot._positionTimeout) {
                 clearTimeout(this.bot._positionTimeout);
                 this.bot._positionTimeout = null;
                 console.log(`[System] Cleared pending position packet for ${this.name}`);
             }
 
-            // FIXED: Bersihkan zombie heartbeat jika koneksi putus
+
             if (this.heartbeatInterval) {
                 clearInterval(this.heartbeatInterval);
                 this.heartbeatInterval = null;
                 console.log(`[System] Cleared heartbeat interval for ${this.name}`);
             }
 
-            // Log and Analyze
             const { type } = handleDisconnection(this.name, reason);
 
             process.exit(1);
         };
 
-        // Bind events
         this.bot.once('kicked', (reason) => onDisconnect('Kicked', reason));
         this.bot.once('end', (reason) => onDisconnect('Disconnected', reason));
         this.bot.on('error', (err) => {
@@ -143,7 +128,7 @@ export class Agent {
             const msg = `Bot has not spawned after ${spawnTimeoutDuration} seconds. Exiting.`;
             log(this.name, msg);
 
-            // FIXED: Pastikan heartbeat tidak mengendap jika gagal spawn
+
             if (this.heartbeatInterval) {
                 clearInterval(this.heartbeatInterval);
                 this.heartbeatInterval = null;
@@ -158,13 +143,12 @@ export class Agent {
                 console.log('Initializing vision intepreter...');
                 this.vision_interpreter = new VisionInterpreter(this, settings.allow_vision);
 
-                // wait for a bit so stats are not undefined
                 await new Promise((resolve) => setTimeout(resolve, 1000));
 
                 console.log(`${this.name} spawned.`);
                 this.clearBotLogs();
 
-                // FIXED: Kirim heartbeat ke Mindserver (Bug #34)
+
                 this.heartbeatInterval = setInterval(() => {
                     if (serverProxy.getSocket()) {
                         serverProxy.getSocket().emit('agent-heartbeat', this.name);
@@ -180,19 +164,18 @@ export class Agent {
                         this.task.setAgentGoal();
                     }
                 } else {
-                    // set the goal without initializing the rest of the task
                     if (settings.task) {
                         this.task.setAgentGoal();
                     }
                 }
 
                 await new Promise((resolve) => setTimeout(resolve, 10000));
-                await this.checkAllPlayersPresent(); // FIXED: Tambahin await di sini
+                await this.checkAllPlayersPresent();
 
             } catch (error) {
                 console.error('Error in spawn event:', error);
 
-                // FIXED: Pastikan interval mati jika terjadi error asinkron di tengah proses spawn
+
                 if (this.heartbeatInterval) {
                     clearInterval(this.heartbeatInterval);
                     this.heartbeatInterval = null;
@@ -203,16 +186,27 @@ export class Agent {
         });
     }
 
-    // FIXED: Extracted DiscordSRV parsing logic into a unified helper (DRY Principle)
     _parseDiscordMessage(message, defaultUsername = "") {
         let finalUsername = defaultUsername;
         let finalMessage = message;
 
-        if (message.includes('»')) {
+        if (!message || typeof message !== 'string') {
+            return { finalUsername, finalMessage };
+        }
+
+
+        const discordRegex = /(?:\[.*?\]\s*)?([a-zA-Z0-9_]+)\s*(?:»|>>|>|:)\s*(.*)/;
+        const match = message.match(discordRegex);
+
+        if (match) {
+            finalUsername = match[1].trim() || defaultUsername;
+            finalMessage = match[2].trim();
+        } else if (message.includes('»')) {
+
             const parts = message.split('»');
             const namePart = parts[0].split(']').pop();
             finalUsername = namePart.trim() || defaultUsername;
-            finalMessage = parts[1].trim();
+            finalMessage = parts.slice(1).join('»').trim();
         }
 
         return { finalUsername, finalMessage };
@@ -231,7 +225,7 @@ export class Agent {
             "Gamerule "
         ];
 
-        // FIXED: Inisialisasi Map untuk tracking Rate Limit secara terisolasi per-username
+
         if (!this.userRateLimits) this.userRateLimits = new Map();
 
         const respondFunc = async (username, message) => {
@@ -240,54 +234,31 @@ export class Agent {
 
             const currentTime = Date.now();
 
-            // FIXED: Menggunakan State Terstruktur untuk Rate Limiter
-            const normalizedMsg = message.toLowerCase().replace(/\s+/g, '');
 
-            if (!this.messageRateLimit.has(username)) {
-                this.messageRateLimit.set(username, { lastTime: 0, lastContent: "" });
-            }
-            const userState = this.messageRateLimit.get(username);
-
-            // 1. Deteksi duplikat ketat anti-bypass (5 detik)
-            if (normalizedMsg === userState.lastContent && (currentTime - userState.lastTime) < 5000) {
+            const isAllowed = await serverProxy.checkRateLimit(username, message);
+            if (!isAllowed) {
+                console.warn(`[Rate Limit] Dropped spam message from ${username} (Global Block).`);
                 return;
             }
 
-            // 2. Rate Limit Per-User (1.5 detik)
-            if ((currentTime - userState.lastTime) < 1500) {
-                console.warn(`[Rate Limit] Membuang pesan spam beruntun dari ${username}.`);
-                return;
-            }
-
-            // Update state ke dalam sub-object
-            userState.lastContent = normalizedMsg;
-            userState.lastTime = currentTime;
-
-            // --- DISCORD CLEANER OPERATION ---
-            // Use the DRY helper method
+            // DISCORD CLEANER OPERATION
             const { finalUsername, finalMessage } = this._parseDiscordMessage(message, username);
 
-            // Convert both the bot's name and the incoming message to lowercase
             const escapedName = this.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const nameRegex = new RegExp(`\\b${escapedName}\\b`, 'i'); // 'i' = case-insensitive
+            const nameRegex = new RegExp(`\\b${escapedName}\\b`, 'i');
 
             const isMentioned = nameRegex.test(finalMessage);
 
-            // If the bot is not called, stay silent (skip function) - Except from Web UI (ADMIN)
             if (!isMentioned && username !== 'ADMIN') {
                 return;
             }
-
-            // Check if this name is in the 'Boleh Chat' list (settings.js) - Except from Web UI (ADMIN)
             if (settings.only_chat_with.length > 0 && !settings.only_chat_with.includes(finalUsername) && username !== 'ADMIN') return;
 
             try {
-                // Filter server spam messages (ClearLag, etc)
                 if (ignore_messages.some((m) => finalMessage.includes(m))) return;
 
                 this.flags.shutUp = false;
 
-                // DC USERNAMES WILL APPEAR IN THE TERMINAL
                 console.log(`${this.name} detected chat from: ${finalUsername} -> ${finalMessage}`);
 
                 if (convoManager.isOtherAgent(finalUsername)) {
@@ -295,7 +266,6 @@ export class Agent {
                 }
                 else {
                     let translation = await handleEnglishTranslation(finalMessage);
-                    // Send clean name to AI brain
                     this.handleMessage(finalUsername, translation);
                 }
             } catch (error) {
@@ -309,11 +279,9 @@ export class Agent {
 
         this.bot.on('chat', (username, message) => {
             if (serverProxy.getNumOtherAgents() > 0) return;
-            // only respond to open chat messages when there are no other agents
             respondFunc(username, message);
         });
 
-        // Set up auto-eat
         this.bot.autoEat.options = {
             priority: 'foodPoints',
             startAt: 14,
@@ -345,26 +313,26 @@ export class Agent {
     }
 
     async checkAllPlayersPresent() {
-        if (!this.task || !this.task.agent_names) {
+        if (!this.task || !Array.isArray(this.task.agent_names) || this.task.agent_names.length === 0) {
             return true;
         }
 
-        const maxRetries = 15; // Coba ngecek 15 kali
-        const delayMs = 2000;  // Jeda 2 detik tiap ngecek (Total nunggu 30 detik)
+        const maxRetries = 15;
+        const delayMs = 2000;
 
         for (let i = 0; i < maxRetries; i++) {
             const missingPlayers = this.task.agent_names.filter(name => !this.bot.players[name]);
 
             if (missingPlayers.length === 0) {
-                if (i > 0) console.log(`[System] Semua pemain/bot lengkap setelah menunggu ${i * 2} detik!`);
-                return true; // Semua hadir, lolos!
+                if (i > 0) console.log(`[System] All players/bots present after waiting ${i * 2} seconds!`);
+                return true;
             }
 
-            console.log(`[System] Menunggu pemain/bot lain spawn: ${missingPlayers.join(', ')}... (Attempt ${i + 1}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, delayMs)); // Tunggu 2 detik
+            console.log(`[System] Waiting for other players/bots to spawn: ${missingPlayers.join(', ')}... (Attempt ${i + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
         }
 
-        // Kalau udah 30 detik tetep hilang, eksekusi mati
+
         const finalMissing = this.task.agent_names.filter(name => !this.bot.players[name]);
         console.log(`[System] Timeout! Missing players/bots: ${finalMissing.join(', ')}`);
         this.cleanKill('Not all required players/bots are present in the world. Exiting.', 4);
@@ -410,7 +378,7 @@ export class Agent {
         const self_prompt = source === 'system' || source === this.name;
         const from_other_bot = convoManager.isOtherAgent(source);
 
-        if (!self_prompt && !from_other_bot) { // from user, check for forced commands
+        if (!self_prompt && !from_other_bot) {
             const user_command_name = containsCommand(message);
             if (user_command_name) {
                 if (!commandExists(user_command_name)) {
@@ -419,8 +387,6 @@ export class Agent {
                 }
                 this.routeResponse(source, `*${source} used ${user_command_name.substring(1)}*`);
                 if (user_command_name === '!newAction') {
-                    // all user-initiated commands are ignored by the bot except for this one
-                    // add the preceding message to the history to give context for newAction
                     this.history.add(source, message);
                 }
                 let execute_res = await executeCommand(this, message);
@@ -433,7 +399,6 @@ export class Agent {
         if (from_other_bot)
             this.last_sender = source;
 
-        // Now translate the message
         message = await handleEnglishTranslation(message);
         console.log('received message from', source, ':', message);
 
@@ -449,7 +414,6 @@ export class Agent {
             await this.history.add('system', behavior_log);
         }
 
-        // Handle other user messages
         await this.history.add(source, message);
         this.history.save();
 
@@ -464,13 +428,13 @@ export class Agent {
 
             if (res.trim().length === 0) {
                 console.warn('no response')
-                break; // empty response ends loop
+                break;
             }
 
             let command_name = containsCommand(res);
 
-            if (command_name) { // contains query or command
-                res = truncCommandMessage(res); // everything after the command is ignored
+            if (command_name) {
+                res = truncCommandMessage(res);
                 this.history.add(this.name, res);
 
                 if (!commandExists(command_name)) {
@@ -486,7 +450,6 @@ export class Agent {
                     this.routeResponse(source, res);
                 }
                 else if (settings.show_command_syntax === "shortened") {
-                    // show only "used !commandname"
                     let pre_message = res.substring(0, res.indexOf(command_name)).trim();
                     let chat_message = `*used ${command_name.substring(1)}*`;
                     if (pre_message.length > 0)
@@ -494,7 +457,6 @@ export class Agent {
                     this.routeResponse(source, chat_message);
                 }
                 else {
-                    // no command at all
                     let pre_message = res.substring(0, res.indexOf(command_name)).trim();
                     if (pre_message.trim().length > 0)
                         this.routeResponse(source, pre_message);
@@ -510,7 +472,7 @@ export class Agent {
                 else
                     break;
             }
-            else { // conversation response
+            else {
                 this.history.add(this.name, res);
                 this.routeResponse(source, res);
                 break;
@@ -526,18 +488,14 @@ export class Agent {
         if (this.flags.shutUp) return;
         let self_prompt = to_player === 'system' || to_player === this.name;
         if (self_prompt && this.last_sender) {
-            // this is for when the agent is prompted by system while still in conversation
             to_player = this.last_sender;
         }
 
         if (convoManager.isOtherAgent(to_player) && convoManager.inConversation(to_player)) {
-            // if we're in an ongoing conversation with the other bot, send the response to it
             convoManager.sendToBot(to_player, message);
         }
         else {
-            // otherwise, use open chat
             this.openChat(message);
-            // note that to_player could be another bot, but if we get here the conversation has ended
         }
     }
 
@@ -684,7 +642,7 @@ export class Agent {
 
 
     cleanKill(msg = 'Killing agent process...', code = 1) {
-        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval); // FIXED: Cleanup heartbeat
+        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
         this.history.add('system', msg);
         this.bot.chat(code > 1 ? 'Restarting.' : 'Exiting.');
         this.history.save();

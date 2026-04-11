@@ -18,6 +18,8 @@ let server;
 const agent_connections = {};
 const agent_listeners = [];
 
+const globalUserRateLimits = new Map();
+
 const settings_spec = JSON.parse(readFileSync(path.join(__dirname, 'public/settings_spec.json'), 'utf8'));
 
 class AgentConnection {
@@ -27,7 +29,7 @@ class AgentConnection {
         this.in_game = false;
         this.full_state = null;
         this.viewer_port = viewer_port;
-        this.last_heartbeat = Date.now(); // FIXED: Track heartbeat (Bug #34)
+        this.last_heartbeat = Date.now();
     }
     setSettings(settings) {
         this.settings = settings;
@@ -46,61 +48,46 @@ export function logoutAgent(agentName) {
     }
 }
 
-// Initialize the server
 export function createMindServer(host_public = false, port = 8080) {
     const app = express();
     server = http.createServer(app);
     io = new Server(server);
-
-    // Serve static files
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     app.use(express.static(path.join(__dirname, 'public')));
 
-    // FIXED 1: Global API queue time untuk centralized rate limiting
     let global_api_queue_time = Date.now();
 
-    const AUTH_TOKEN = process.env.MINDCRAFT_SECRET;
 
-    // API Baru untuk menerima login dan mencetak Cookie Aman (httpOnly)
-    app.use(express.json());
-    app.post('/api/login', (req, res) => {
-        if (req.body.password === AUTH_TOKEN) {
-            res.cookie('mindcraft_session', AUTH_TOKEN, {
-                httpOnly: true,
-                sameSite: 'strict',
-                maxAge: 24 * 60 * 60 * 1000 // Berlaku 24 jam
-            });
-            res.json({ success: true });
-        } else {
-            res.status(401).json({ success: false, error: "Password salah!" });
-        }
-    });
 
-    // Helper untuk membaca Cookie dari Socket.io
-    const parseCookies = (cookieStr) => {
-        if (!cookieStr) return {};
-        return Object.fromEntries(cookieStr.split(';').map(c => c.trim().split('=')));
-    };
-
-    // Keamanan Socket.io sekarang mengambil token dari Cookie, BUKAN dari Javascript
-    io.use((socket, next) => {
-        const cookies = parseCookies(socket.request.headers.cookie);
-        const cookieAuth = cookies.mindcraft_session === AUTH_TOKEN && !!AUTH_TOKEN;
-        const tokenAuth = socket.handshake.auth?.token === AUTH_TOKEN && !!AUTH_TOKEN;
-
-        if (cookieAuth || tokenAuth) {
-            return next();
-        }
-        console.warn(`[Security] Blocked unauthorized connection from: ${socket.handshake.address}`);
-        return next(new Error("Authentication error: Access Denied"));
-    });
-
-    // Socket.io connection handling
     io.on('connection', (socket) => {
         let curAgentName = null;
         console.log('Client connected');
 
-        // Handle request antrean API dari agent (Dari patch rate limiter)
+        socket.on('check-rate-limit', (username, message, callback) => {
+            const currentTime = Date.now();
+            const normalizedMsg = message.toLowerCase().replace(/\s+/g, '');
+
+            if (!globalUserRateLimits.has(username)) {
+                globalUserRateLimits.set(username, { lastTime: 0, lastContent: "" });
+            }
+            const userState = globalUserRateLimits.get(username);
+
+
+            if (normalizedMsg === userState.lastContent && (currentTime - userState.lastTime) < 5000) {
+                return callback({ allowed: false });
+            }
+
+            if ((currentTime - userState.lastTime) < 1500) {
+                return callback({ allowed: false });
+            }
+
+
+            userState.lastContent = normalizedMsg;
+            userState.lastTime = currentTime;
+            callback({ allowed: true });
+        });
+
+
         socket.on('request-api-slot', (minWait, callback) => {
             const now = Date.now();
             if (global_api_queue_time < now) {
@@ -155,16 +142,28 @@ export function createMindServer(host_public = false, port = 8080) {
             }
         });
 
-        socket.on('get-settings', (agentName, callback) => {
+        socket.on('get-settings', (agentName, arg2, arg3) => {
+            let isAgent = false;
+            let callback = null;
+            if (typeof arg2 === 'function') {
+                callback = arg2;
+            } else if (typeof arg3 === 'function') {
+                isAgent = arg2;
+                callback = arg3;
+            }
+
+            if (!callback) return;
+
             if (agent_connections[agentName]) {
-                // FIXED: Sanitasi data settings sebelum dikirim ke client (Security Patch)
-                // Cegah kebocoran seluruh isi profile ke jaringan
-                const safeSettings = JSON.parse(JSON.stringify(agent_connections[agentName].settings));
-                if (safeSettings.profile) {
-                    // Hanya ekspos nama profile ke Web UI, buang sisa data sensitifnya
-                    safeSettings.profile = { name: safeSettings.profile.name };
+                if (isAgent) {
+                    callback({ settings: agent_connections[agentName].settings });
+                } else {
+                    const safeSettings = JSON.parse(JSON.stringify(agent_connections[agentName].settings));
+                    if (safeSettings.profile) {
+                        safeSettings.profile = { name: safeSettings.profile.name };
+                    }
+                    callback({ settings: safeSettings });
                 }
-                callback({ settings: safeSettings });
             } else {
                 callback({ error: `Agent '${agentName}' not found.` });
             }
@@ -181,7 +180,7 @@ export function createMindServer(host_public = false, port = 8080) {
             if (agent_connections[agentName]) {
                 agent_connections[agentName].socket = socket;
                 agent_connections[agentName].in_game = true;
-                agent_connections[agentName].last_heartbeat = Date.now(); // Reset on login
+                agent_connections[agentName].last_heartbeat = Date.now();
                 curAgentName = agentName;
                 agentsStatusUpdate();
             }
@@ -220,11 +219,9 @@ export function createMindServer(host_public = false, port = 8080) {
         socket.on('set-agent-settings', (agentName, settings) => {
             const agent = agent_connections[agentName];
             if (agent) {
-                // FIXED: Gabungkan kembali dengan profile asli di server
-                // Karena frontend hanya mengirim profile yang sudah disanitasi (kosong)
                 const updatedSettings = {
                     ...settings,
-                    profile: agent.settings.profile // Pertahankan data profile asli milik agent
+                    profile: agent.settings.profile
                 };
                 agent.setSettings(updatedSettings);
                 agent.socket.emit('restart-agent');
@@ -264,7 +261,6 @@ export function createMindServer(host_public = false, port = 8080) {
             for (let agentName in agent_connections) {
                 mindcraft.stopAgent(agentName);
             }
-            // wait 2 seconds
             setTimeout(() => {
                 console.log('Exiting MindServer');
                 process.exit(0);
@@ -301,7 +297,6 @@ export function createMindServer(host_public = false, port = 8080) {
         console.log(`MindServer running on port ${port} on host ${host}`);
     });
 
-    // FIXED: Watchdog untuk mendeteksi agent yang crash/hang (Bug #34)
     setInterval(() => {
         let changed = false;
         const now = Date.now();
@@ -338,32 +333,29 @@ function agentsStatusUpdate(socket) {
 
 
 let listenerInterval = null;
-let isFetchingState = false; // FIXED: Lock untuk mekanisme Backpressure
+let isFetchingState = false;
 
 function addListener(listener_socket) {
     agent_listeners.push(listener_socket);
     if (agent_listeners.length === 1) {
         listenerInterval = setInterval(async () => {
-            // FIXED 1: Backpressure - Lewati siklus jika fetch sebelumnya belum beres
             if (isFetchingState) return;
             isFetchingState = true;
 
             const states = {};
 
-            // FIXED 2: Parallel Execution - Kumpulkan semua agen yang aktif
             const activeAgents = Object.keys(agent_connections).filter(name => agent_connections[name].in_game);
 
             const fetchPromises = activeAgents.map(async (agentName) => {
                 const agent = agent_connections[agentName];
                 try {
                     const state = await new Promise((resolve, reject) => {
-                        // FIXED: Bom waktu untuk mematikan Promise yang nyangkut
                         const timeout = setTimeout(() => {
                             reject(new Error('Fetch timeout (800ms)'));
                         }, 800);
 
                         agent.socket.emit('get-full-state', (s) => {
-                            clearTimeout(timeout); // Matikan bom jika agen jawab cepat
+                            clearTimeout(timeout);
                             resolve(s);
                         });
                     });
@@ -373,14 +365,12 @@ function addListener(listener_socket) {
                 }
             });
 
-            // Jalankan tembakan socket ke semua agen secara bersamaan
             await Promise.all(fetchPromises);
 
             for (let listener of agent_listeners) {
                 listener.emit('state-update', states);
             }
 
-            // Lepaskan lock agar siklus berikutnya bisa berjalan
             isFetchingState = false;
         }, 1000);
     }
@@ -394,7 +384,6 @@ function removeListener(listener_socket) {
     }
 }
 
-// Optional: export these if you need access to them from other files
 export const getIO = () => io;
 export const getServer = () => server;
 export const numStateListeners = () => agent_listeners.length;

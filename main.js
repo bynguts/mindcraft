@@ -37,7 +37,6 @@ if (args.task_path) {
     }
 }
 
-// these environment variables override certain settings
 if (process.env.MINECRAFT_PORT) {
     settings.port = process.env.MINECRAFT_PORT;
 }
@@ -73,10 +72,8 @@ if (process.env.SETTINGS_JSON) {
 
 Mindcraft.init(false, settings.mindserver_port, settings.auto_open_ui);
 
-// FIXED: Load the default profile first to act as a base (DRY Principle)
 let defaultProfile = {};
 try {
-    // Read the _default.json file from the profiles/defaults/ directory
     defaultProfile = JSON.parse(readFileSync('./profiles/defaults/_default.json', 'utf8'));
 } catch (err) {
     console.warn("[Warning] Failed to read _default.json. Please ensure the file exists at ./profiles/defaults/_default.json");
@@ -85,7 +82,6 @@ try {
 for (let profile of settings.profiles) {
     const customProfile = JSON.parse(readFileSync(profile, 'utf8'));
 
-    // Auto-Merge: customProfile fields will override identical fields in defaultProfile
     settings.profile = { ...defaultProfile, ...customProfile };
 
     Mindcraft.createAgent(settings);

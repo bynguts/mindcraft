@@ -59,7 +59,7 @@ export function initBot(username) {
         port: settings.port,
         auth: settings.auth,
         version: mc_version,
-        checkTimeoutInterval: 60000,  // 60s keep-alive check (default 30s) — reduces disconnects on slow servers
+        checkTimeoutInterval: 60000,
     }
     if (!mc_version || mc_version === "auto") {
         delete options.version;
@@ -67,18 +67,13 @@ export function initBot(username) {
 
     const bot = createBot(options);
 
-    // Throttle position packets to avoid kicks on Paper/Spigot servers
-    // Paper enforces stricter packet rate limits than vanilla, causing ECONNRESET
-    // when mineflayer sends position updates faster than 50ms apart
     let lastPositionUpdate = 0;
-    // FIXED: Hapus variabel global pendingPositionPacket
     const POSITION_THROTTLE_MS = 50;
     const originalWrite = bot._client.write.bind(bot._client);
     bot._client.write = function (name, data) {
         if (name === 'position' || name === 'position_look' || name === 'look') {
             const now = Date.now();
             if (now - lastPositionUpdate < POSITION_THROTTLE_MS) {
-                // FIXED: Gunakan bot._positionTimeout agar aman per-bot (mencegah Memory Leak)
                 if (!bot._positionTimeout) {
                     bot._positionTimeout = setTimeout(() => {
                         bot._positionTimeout = null;
@@ -97,10 +92,6 @@ export function initBot(username) {
         return originalWrite(name, data);
     };
 
-    // Suppress PartialReadError for non-critical packets
-    // Paper servers sometimes send packets that node-minecraft-protocol
-    // can't fully parse (scoreboard, resource_pack, custom_payload, etc.)
-    // These errors crash the bot but the packets aren't needed for gameplay
     const originalEmit = bot._client.emit.bind(bot._client);
     bot._client.emit = function (event, ...args) {
         if (event === 'error' && args[0]) {
@@ -108,7 +99,7 @@ export function initBot(username) {
             const errStr = err instanceof Error ? err.message : String(err);
             if (errStr.includes('PartialReadError')) {
                 console.warn('[mcdata] Suppressed PartialReadError:', errStr.substring(0, 120));
-                return true; // Swallow the error
+                return true;
             }
         }
         return originalEmit(event, ...args);
@@ -118,7 +109,7 @@ export function initBot(username) {
     bot.loadPlugin(pvp);
     bot.loadPlugin(collectblock);
     bot.loadPlugin(autoEat);
-    bot.loadPlugin(armorManager); // auto equip armor
+    bot.loadPlugin(armorManager);
     bot.once('resourcePack', () => {
         bot.acceptResourcePack();
     });
@@ -135,7 +126,7 @@ export function initBot(username) {
 export function isHuntable(mob) {
     if (!mob || !mob.name) return false;
     const animals = ['chicken', 'cow', 'llama', 'mooshroom', 'pig', 'rabbit', 'sheep'];
-    return animals.includes(mob.name.toLowerCase()) && !mob.metadata[16]; // metadata 16 is not baby
+    return animals.includes(mob.name.toLowerCase()) && !mob.metadata[16];
 }
 
 export function isHostile(mob) {
@@ -143,9 +134,7 @@ export function isHostile(mob) {
     return (mob.type === 'mob' || mob.type === 'hostile') && mob.name !== 'iron_golem' && mob.name !== 'snow_golem';
 }
 
-// blocks that don't work with collectBlock, need to be manually collected
 export function mustCollectManually(blockName) {
-    // all crops (that aren't normal blocks), torches, buttons, levers, redstone,
     const full_names = ['wheat', 'carrots', 'potatoes', 'beetroots', 'nether_wart', 'cocoa', 'sugar_cane', 'kelp', 'short_grass', 'fern', 'tall_grass', 'bamboo',
         'poppy', 'dandelion', 'blue_orchid', 'allium', 'azure_bluet', 'oxeye_daisy', 'cornflower', 'lilac', 'wither_rose', 'lily_of_the_valley', 'wither_rose',
         'lever', 'redstone_wire', 'lantern']
@@ -270,7 +259,7 @@ export function getItemCraftingRecipes(itemName) {
             { craftedCount: r.result.count }
         ]);
     }
-    // sort recipes by if their ingredients include common items
+
     const commonItems = ['oak_planks', 'oak_log', 'coal', 'cobblestone'];
     recipes.sort((a, b) => {
         let commonCountA = Object.keys(a[0]).filter(key => commonItems.includes(key)).reduce((acc, key) => acc + a[0][key], 0);
@@ -358,7 +347,7 @@ export function getBlockTool(blockName) {
     if (!block || !block.harvestTools) {
         return null;
     }
-    return getItemName(Object.keys(block.harvestTools)[0]);  // Double check first tool is always simplest
+    return getItemName(Object.keys(block.harvestTools)[0]);
 }
 
 export function makeItem(name, amount = 1) {
@@ -375,7 +364,7 @@ export function ingredientsFromPrismarineRecipe(recipe) {
     let requiredIngedients = {};
     if (recipe.inShape)
         for (const ingredient of recipe.inShape.flat()) {
-            if (ingredient.id < 0) continue; //prismarine-recipe uses id -1 as an empty crafting slot
+            if (ingredient.id < 0) continue;
             const ingredientName = getItemName(ingredient.id);
             requiredIngedients[ingredientName] ??= 0;
             requiredIngedients[ingredientName] += ingredient.count;
@@ -386,9 +375,6 @@ export function ingredientsFromPrismarineRecipe(recipe) {
             const ingredientName = getItemName(ingredient.id);
             requiredIngedients[ingredientName] ??= 0;
             requiredIngedients[ingredientName] -= ingredient.count;
-            //Yes, the `-=` is intended.
-            //prismarine-recipe uses positive numbers for the shaped ingredients but negative for unshaped.
-            //Why this is the case is beyond my understanding.
         }
     return requiredIngedients;
 }
@@ -484,13 +470,11 @@ function isBaseItem(item) {
 }
 
 function craftItem(item, count, inventory, leftovers, crafted = { required: {}, steps: [], leftovers: {} }) {
-    // Check available inventory and leftovers first
     const availableInv = inventory[item] || 0;
     const availableLeft = leftovers[item] || 0;
     const totalAvailable = availableInv + availableLeft;
 
     if (totalAvailable >= count) {
-        // Use leftovers first, then inventory
         const useFromLeft = Math.min(availableLeft, count);
         leftovers[item] = availableLeft - useFromLeft;
 
@@ -501,7 +485,6 @@ function craftItem(item, count, inventory, leftovers, crafted = { required: {}, 
         return crafted;
     }
 
-    // Use whatever is available
     const stillNeeded = count - totalAvailable;
     if (availableLeft > 0) leftovers[item] = 0;
     if (availableInv > 0) inventory[item] = 0;
@@ -522,18 +505,14 @@ function craftItem(item, count, inventory, leftovers, crafted = { required: {}, 
     const batchCount = Math.ceil(stillNeeded / craftedPerRecipe);
     const totalProduced = batchCount * craftedPerRecipe;
 
-    // Add excess to leftovers
     if (totalProduced > stillNeeded) {
         leftovers[item] = (leftovers[item] || 0) + (totalProduced - stillNeeded);
     }
-
-    // Process each ingredient
     for (const [ingredientName, ingredientCount] of Object.entries(ingredients)) {
         const totalIngredientNeeded = ingredientCount * batchCount;
         craftItem(ingredientName, totalIngredientNeeded, inventory, leftovers, crafted);
     }
 
-    // Add crafting step
     const stepIngredients = Object.entries(ingredients)
         .map(([name, amount]) => `${amount * batchCount} ${name}`)
         .join(' + ');

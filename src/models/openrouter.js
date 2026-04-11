@@ -15,13 +15,11 @@ export class OpenRouter {
             console.error('Error: OPENROUTER_API_KEY not found. Make sure it is set properly.');
         }
 
-        // Pass the API key to OpenAI compatible Api
         config.apiKey = apiKey;
 
         this.openai = new OpenAIApi(config);
     }
 
-    // FIXED: Added Auto-Retry and Exponential Backoff for Rate Limits (HTTP 429)
     async sendRequest(turns, systemMessage, stop_seq = '*') {
         let messages = [{ role: 'system', content: systemMessage }, ...turns];
         messages = strictFormat(messages);

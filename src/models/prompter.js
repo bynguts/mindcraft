@@ -31,17 +31,14 @@ export class Prompter {
         }
         let base_profile = JSON.parse(readFileSync(base_fp, 'utf8'));
 
-        // first use defaults to fill in missing values in the base profile
         for (let key in default_profile) {
             if (base_profile[key] === undefined)
                 base_profile[key] = default_profile[key];
         }
-        // then use base profile to fill in missing values in the individual profile
         for (let key in base_profile) {
             if (this.profile[key] === undefined)
                 this.profile[key] = base_profile[key];
         }
-        // base overrides default, individual overrides base
 
         this.convo_examples = null;
         this.coding_examples = null;
@@ -51,7 +48,6 @@ export class Prompter {
         this.last_prompt_time = 0;
         this.awaiting_coding = false;
 
-        // for backwards compatibility, move max_tokens to params
         let max_tokens = null;
         if (this.profile.max_tokens)
             max_tokens = this.profile.max_tokens;
@@ -111,13 +107,11 @@ export class Prompter {
             this.convo_examples = new Examples(this.embedding_model, settings.num_examples);
             this.coding_examples = new Examples(this.embedding_model, settings.num_examples);
 
-            // Wait for both examples to load before proceeding
             await Promise.all([
                 this.convo_examples.load(this.profile.conversation_examples),
                 this.coding_examples.load(this.profile.coding_examples),
                 this.skill_libary.initSkillLibrary()
             ]).catch(error => {
-                // Preserve error details
                 console.error('Failed to initialize examples. Error details:', error);
                 console.error('Stack trace:', error.stack);
                 throw error;
@@ -127,24 +121,21 @@ export class Prompter {
         } catch (error) {
             console.error('Failed to initialize examples:', error);
             console.error('Stack trace:', error.stack);
-            throw error; // Re-throw with preserved details
+            throw error;
         }
     }
 
     async replaceStrings(prompt, messages, examples = null, to_summarize = [], last_goals = null) {
-        // FIXED: Implementasi LRU & TTL Cache dengan Auto-Cleanup untuk mencegah Memory Leak
         if (!this.stringCache) this.stringCache = new Map();
         const now = Date.now();
 
-        // 1. Auto-Cleanup: Hapus semua cache yang sudah melewati batas waktu aman (contoh: > 5000ms)
         for (const [k, v] of this.stringCache.entries()) {
-            if (now - v.time > 5000) {
+            if (now - v.time > 30000) {
                 this.stringCache.delete(k);
             }
         }
 
         const getCached = async (key, ttl_ms, fetcher) => {
-            // 2. Hit Cache
             if (this.stringCache.has(key)) {
                 const cached = this.stringCache.get(key);
                 if (now - cached.time < ttl_ms) {
@@ -152,15 +143,12 @@ export class Prompter {
                 }
             }
 
-            // 3. LRU Limit: Mencegah Map membengkak di luar kendali jika kunci dinamis ditambahkan
             const MAX_CACHE_SIZE = 10;
             if (this.stringCache.size >= MAX_CACHE_SIZE) {
-                // Map di JavaScript mempertahankan urutan insersi, item pertama adalah yang paling lama
                 const oldestKey = this.stringCache.keys().next().value;
                 this.stringCache.delete(oldestKey);
             }
 
-            // 4. Fetch dan Simpan
             const val = await fetcher();
             this.stringCache.set(key, { time: now, value: val });
             return val;
@@ -169,17 +157,17 @@ export class Prompter {
         prompt = prompt.replaceAll('$NAME', this.agent.name);
 
         if (prompt.includes('$STATS')) {
-            let stats = await getCached('stats', 2000, async () => {
+            let stats = await getCached('stats', 15000, async () => {
                 let s = await getCommand('!stats').perform(this.agent) + '\n';
                 s += await getCommand('!entities').perform(this.agent) + '\n';
-                s += await getCommand('!nearbyBlocks').perform(this.agent); // Ini yang bikin berat!
+                s += await getCommand('!nearbyBlocks').perform(this.agent);
                 return s;
             });
             prompt = prompt.replaceAll('$STATS', stats);
         }
 
         if (prompt.includes('$INVENTORY')) {
-            let inventory = await getCached('inventory', 2000, async () => {
+            let inventory = await getCached('inventory', 15000, async () => {
                 return await getCommand('!inventory').perform(this.agent);
             });
             prompt = prompt.replaceAll('$INVENTORY', inventory);
@@ -192,7 +180,6 @@ export class Prompter {
 
             const last_user_msg = messages.slice().reverse().find(msg => msg.role !== 'system')?.content || '';
             if (this.agent.learned_skills && last_user_msg) {
-                // FIXED: Await the new async semantic vector search for learned skills (Bug #37)
                 let relevant_skills = await this.agent.learned_skills.getFormattedSkills(last_user_msg);
                 if (!relevant_skills.includes("No relevant")) {
                     docs += "\n\n" + relevant_skills;
@@ -200,7 +187,6 @@ export class Prompter {
             }
 
             if (this.agent.memory_bank) {
-                // FIXED: Array proper length check to avoid type mismatch confusion
                 const quests = this.agent.memory_bank.quests;
                 if (Array.isArray(quests) && quests.length > 0) {
                     docs += this.agent.memory_bank.getQuestBoard();
@@ -228,7 +214,6 @@ export class Prompter {
         if (prompt.includes('$CONVO'))
             prompt = prompt.replaceAll('$CONVO', 'Recent conversation:\n' + stringifyTurns(messages));
         if (prompt.includes('$SELF_PROMPT')) {
-            // if active or paused, show the current goal
             let self_prompt = !this.agent.self_prompter.isStopped() ? `YOUR CURRENT ASSIGNED GOAL: "${this.agent.self_prompter.prompt}"\n` : '';
             prompt = prompt.replaceAll('$SELF_PROMPT', self_prompt);
         }
@@ -252,7 +237,6 @@ export class Prompter {
             }
         }
 
-        // check if there are any remaining placeholders with syntax $<word>
         let remaining = prompt.match(/\$[A-Z_]+/g);
         if (remaining !== null) {
             console.warn('Unknown prompt placeholders:', remaining.join(', '));
@@ -261,22 +245,19 @@ export class Prompter {
     }
 
     async checkCooldown() {
-        // FIXED: Revert back to local agent throttling to prevent massive multi-agent delays (Performance Patch)
-        // Default cooldown: 1000ms (1s) safety floor per agent, or whatever is set in the profile
         const minWait = this.cooldown > 0 ? this.cooldown : 1000;
         const currentTime = Date.now();
         const elapsed = currentTime - this.last_prompt_time;
 
         if (elapsed < minWait) {
             const sleepTime = minWait - elapsed;
-            // Hanya log jika sleepTime cukup signifikan agar console tidak terlalu spam
             if (sleepTime > 100) {
                 console.log(`[Prompter] Throttling local request: Waiting ${sleepTime}ms...`);
             }
             await new Promise(r => setTimeout(r, sleepTime));
         }
 
-        // Catat waktu SETELAH sleep selesai agar agent ini baru bisa request lagi 1 detik kemudian
+
         this.last_prompt_time = Date.now();
     }
 
@@ -284,7 +265,7 @@ export class Prompter {
         this.most_recent_msg_time = Date.now();
         let current_msg_time = this.most_recent_msg_time;
 
-        for (let i = 0; i < 3; i++) { // try 3 times to avoid hallucinations
+        for (let i = 0; i < 3; i++) {
             await this.checkCooldown();
             if (current_msg_time !== this.most_recent_msg_time) {
                 return '';
@@ -306,34 +287,28 @@ export class Prompter {
             } catch (error) {
                 console.error('Error during message generation or file writing:', error.message || error);
 
-                // FIXED: Filter Error Fatal (Non-Retryable) agar tidak membuang kuota/waktu
-                // Cek status code dari berbagai format library (Axios, Fetch, SDK)
                 const status = error.status || error.response?.status || error.code || error.statusCode;
 
-                // 400: Bad Request, 401: Unauthorized, 403: Forbidden, 404: Not Found, 422: Unprocessable Entity
                 const fatalCodes = [400, 401, 403, 404, 422];
 
                 if (fatalCodes.includes(status) || String(error).includes('API key')) {
-                    console.error(`[Prompter] 🚨 FATAL API ERROR (${status}). Membatalkan retry untuk mencegah pemblokiran atau pemborosan.`);
-                    return ''; // Langsung keluar, jangan di-retry!
+                    console.error(`[Prompter] 🚨 FATAL API ERROR (${status}). Aborting retry to prevent blocking or waste.`);
+                    return '';
                 }
 
-                // Error dianggap Retryable (misal: 429 Rate Limit, 502/503/504 Server Error, atau Timeout)
                 if (i < 2) {
-                    const backoffTime = 2000 * Math.pow(2, i); // 2s, 4s
+                    const backoffTime = 2000 * Math.pow(2, i);
                     console.warn(`[Prompter] ⚠️ Temporary API Error/Rate Limit (${status || 'Network'}). Retrying in ${backoffTime}ms... (Attempt ${i + 1}/3)`);
                     await new Promise(resolve => setTimeout(resolve, backoffTime));
                 }
                 continue;
             }
 
-            // Check for hallucination or invalid output
             if (generation?.includes('(FROM OTHER BOT)')) {
                 console.warn('LLM hallucinated message as another bot. Trying again...');
 
-                // FIXED: Opsional Backoff untuk halusinasi agar AI punya waktu "bernapas" dan tidak mengulang output yang sama persis di milidetik yang sama
                 if (i < 2) {
-                    const backoffTime = 1000 * Math.pow(2, i); // 1s, 2s
+                    const backoffTime = 1000 * Math.pow(2, i);
                     console.warn(`[Prompter] Hallucination detected. Retrying in ${backoffTime}ms... (Attempt ${i + 1}/3)`);
                     await new Promise(resolve => setTimeout(resolve, backoffTime));
                 }
@@ -403,7 +378,6 @@ export class Prompter {
     }
 
     async promptGoalSetting(messages, last_goals) {
-        // deprecated
         let system_message = this.profile.goal_setting;
         system_message = await this.replaceStrings(system_message, messages);
 

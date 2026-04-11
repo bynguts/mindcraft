@@ -9,6 +9,10 @@ import { addCommand } from './index.js';
 import path from 'path';
 import { THRESHOLDS } from '../../utils/constants.js';
 
+lockdown();
+
+const skills = {};
+
 function runAsAction(actionFn, resume = false, timeout = -1) {
     let actionLabel = null;
 
@@ -95,7 +99,7 @@ function backupExisting(cleanName, targetFile, historyFolder) {
         fs.renameSync(targetFile, backupPath);
         console.log(`[Versioning] Backed up old version of ${cleanName} to history.`);
     } catch (renameErr) {
-        console.warn(`[Versioning] Warning: Gagal memindah file ke backup. Lewati backup.`);
+        console.warn(`[Versioning] Warning: Failed to move file to backup. Skipping backup.`);
     }
 
     try {
@@ -125,44 +129,44 @@ function backupExisting(cleanName, targetFile, historyFolder) {
     }
 }
 
+async function executeSkillSandbox(commandName, src, agent) {
+    const compartment = makeCompartment({
+        skills: skills,
+        log: skills.log,
+        world: worldLib,
+        Vec3
+    });
+
+    try {
+        const mainFn = compartment.evaluate(src);
+        await mainFn(agent.bot);
+
+        if (agent.learned_skills) {
+            agent.learned_skills.updateSkillPerformance(commandName, true);
+        }
+    } catch (err) {
+        console.error(`[Auto-Skill] ${commandName} execution failed:`, err);
+        if (agent.learned_skills) {
+            agent.learned_skills.updateSkillPerformance(commandName, false);
+        }
+        throw err;
+    }
+}
+
 function registerCommand(commandName, saveFolder) {
     const newCommand = {
         name: `!${commandName}`,
         description: `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning.`,
         perform: runAsAction(async (agent) => {
             const src = fs.readFileSync(path.join(saveFolder, `${commandName}.js`), 'utf8');
-
-            // Menggunakan fungsi pengaman global yang sudah kita bahas di isu sebelumnya
-            if (typeof lockdown === 'function') lockdown();
-
-            const compartment = makeCompartment({
-                skills: skills,
-                log: skills.log,
-                world: worldLib,
-                Vec3
-            });
-
-            try {
-                const mainFn = compartment.evaluate(src);
-                await mainFn(agent.bot);
-
-                if (agent.learned_skills) {
-                    agent.learned_skills.updateSkillPerformance(commandName, true);
-                }
-            } catch (err) {
-                console.error(`Skill ${commandName} execution failed:`, err);
-                if (agent.learned_skills) {
-                    agent.learned_skills.updateSkillPerformance(commandName, false);
-                }
-                throw err;
-            }
+            // Panggil helper tunggal
+            await executeSkillSandbox(commandName, src, agent);
         })
     };
 
     actionsList.push(newCommand);
     addCommand(newCommand);
 }
-// --------------------------------------------------------
 
 export const actionsList = [
     {
@@ -456,7 +460,7 @@ export const actionsList = [
         },
         perform: runAsAction(async (agent, item_name, num) => {
             let success = await skills.smeltItem(agent.bot, item_name, num);
-            // FIXED: Removed agent.cleanKill() to prevent infinite loop on load_memory: true
+
             if (success) {
                 skills.log(agent.bot, 'Smelting complete. Inventory will update naturally.');
             }
@@ -766,7 +770,7 @@ export const actionsList = [
 
             try {
                 const files = fs.readdirSync(historyFolder);
-                // FIXED: Find all backups for this skill, sort by modification time (newest first)
+
                 const backups = files
                     .filter(f => f.startsWith(`${skill_name}_`) && f.endsWith('.js.bak'))
                     .map(f => ({ name: f, time: fs.statSync(path.join(historyFolder, f)).mtime.getTime() }))
@@ -785,7 +789,7 @@ export const actionsList = [
                 // Delete the restored backup so a subsequent rollback goes to an even older version
                 fs.unlinkSync(backupPath);
 
-                // FIXED: Hot-reload the skill directly into the agent's brain without restarting
+
                 loadSavedSkills();
 
                 skills.log(agent.bot, `[Rollback] Successfully restored '!${skill_name}' from backup: ${latestBackup}`);
@@ -799,12 +803,12 @@ export const actionsList = [
     },
 ];
 
-// FIXED: Encapsulated auto-load logic to prevent module-scope blocking and crashes.
-// FIXED: Encapsulated auto-load logic to prevent module-scope blocking and crashes.
+
+
 let skillsLoaded = false;
 
 export function loadSavedSkills() {
-    // 1. FIXED: Gunakan path.resolve untuk mengunci direktori dasar secara absolut
+
     const saveFolder = path.resolve('./bots/saved_skills/');
     const metadataPath = path.join(saveFolder, 'metadata.json');
     let validSkills = {};
@@ -822,15 +826,15 @@ export function loadSavedSkills() {
         for (const file of files) {
             if (file.endsWith('.js')) {
                 try {
-                    // 1. FIXED: Ambil nama file murni untuk menetralisir payload seperti ..%2f
+
                     const safeFileName = path.basename(file);
                     const rawPath = path.join(saveFolder, safeFileName);
 
-                    // 2. FIXED: Bongkar symlink dan path palsu untuk mendapatkan lokasi asli di disk
+
                     const filePath = fs.realpathSync(rawPath);
                     const normalizedBase = fs.realpathSync(saveFolder);
 
-                    // 3. FIXED: Validasi akhir menggunakan jalur asli yang sudah dinormalisasi OS
+
                     if (!filePath.startsWith(normalizedBase)) {
                         console.warn(`[Security] Blocked symlink or path traversal attempt: ${file}`);
                         continue;
@@ -861,34 +865,10 @@ export function loadSavedSkills() {
                         name: `!${commandName}`,
                         description: (validSkills[commandName].description || `Automatic skill: ${commandName.replace(/_/g, ' ')}. Use this !${commandName} command if the user asks you to perform a similar action or one with the same meaning based on the name.`) + depsText,
                         perform: runAsAction(async (agent) => {
-                            // Membaca dari filePath yang sudah 100% dipastikan keamanannya
+
                             const src = fs.readFileSync(filePath, 'utf8');
-
-                            // FIXED: Kunci environment global SEBELUM skill lama dieksekusi
-                            lockdown();
-
-                            const compartment = makeCompartment({
-                                skills: skills,
-                                log: skills.log,
-                                world: worldLib,
-                                Vec3
-                            });
-
-                            try {
-                                const mainFn = compartment.evaluate(src);
-                                await mainFn(agent.bot);
-
-                                if (agent.learned_skills) {
-                                    agent.learned_skills.updateSkillPerformance(commandName, true);
-                                }
-                            } catch (err) {
-                                console.error(`[Auto-Skill] ${commandName} execution failed:`, err);
-
-                                if (agent.learned_skills) {
-                                    agent.learned_skills.updateSkillPerformance(commandName, false);
-                                }
-                                throw err;
-                            }
+                            // Panggil helper tunggal
+                            await executeSkillSandbox(commandName, src, agent);
                         })
                     };
 
@@ -897,7 +877,7 @@ export function loadSavedSkills() {
                     console.log(`[Auto-Load] Valid skill loaded/reloaded: !${commandName}`);
 
                 } catch (err) {
-                    // Menangkap error dari realpathSync jika file tidak bisa diakses/hilang
+
                     console.error(`[Security/IO] Could not safely process skill file ${file}:`, err.message);
                     continue;
                 }
