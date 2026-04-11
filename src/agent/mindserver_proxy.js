@@ -2,20 +2,24 @@ import { io } from 'socket.io-client';
 import convoManager from './conversation.js';
 import { setSettings } from './settings.js';
 import { getFullState } from './library/full_state.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
 // agent's individual connection to the mindserver
 // always connect to localhost
 
 class MindServerProxy {
     constructor() {
-        if (MindServerProxy.instance) {
-            return MindServerProxy.instance;
-        }
+        // FIXED: Tambahkan blok auth agar Agen membawa password 'gintoki' saat konek
+        this.socket = io(process.env.MINDSERVER_URL || 'http://localhost:8080', {
+            auth: {
+                token: process.env.MINDCRAFT_SECRET // KUNCINYA DI SINI!
+            },
+            reconnection: true,
+            reconnectionAttempts: 5
+        });
 
-        this.socket = null;
-        this.connected = false;
-        this.agents = [];
-        MindServerProxy.instance = this;
+        this._setupListeners();
     }
 
     async connect(name, port) {
@@ -28,7 +32,7 @@ class MindServerProxy {
 
         this.socket = io(`http://127.0.0.1:${port}`, {
             auth: {
-                token: AUTH_TOKEN
+                token: process.env.MINDCRAFT_SECRET
             }
         });
 

@@ -25,6 +25,11 @@ export class Agent {
         this.last_sender = null;
         this.count_id = count_id;
 
+        console.log(`[DEBUG] Checking Secret: ${process.env.MINDCRAFT_SECRET ? 'FOUND ✅' : 'MISSING ❌'}`);
+        if (process.env.MINDCRAFT_SECRET) {
+            console.log(`[DEBUG] Secret value starts with: ${process.env.MINDCRAFT_SECRET.substring(0, 3)}...`);
+        }
+
         // FIXED: State Management Terpusat
         this.flags = {
             disconnectHandled: false,
