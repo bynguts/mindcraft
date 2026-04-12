@@ -21,13 +21,16 @@ class Conversation {
         this.active = false;
         this.ignore_until_start = false;
         this.in_queue = [];
+        if (this.inMessageTimer) clearTimeout(this.inMessageTimer);
         this.inMessageTimer = null;
     }
 
     end() {
         this.active = false;
         this.ignore_until_start = true;
+        if (this.inMessageTimer) clearTimeout(this.inMessageTimer);
         this.inMessageTimer = null;
+
         const full_message = _compileInMessages(this);
         if (full_message.message.trim().length > 0)
             agent.history.add(this.name, full_message.message);
