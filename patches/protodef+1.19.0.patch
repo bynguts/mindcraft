@@ -1,3 +1,27 @@
+diff --git a/node_modules/protodef/src/compiler.js b/node_modules/protodef/src/compiler.js
+index 9c8f057..0381974 100644
+--- a/node_modules/protodef/src/compiler.js
++++ b/node_modules/protodef/src/compiler.js
+@@ -256,10 +256,15 @@ class Compiler {
+    * @param {*} code
+    */
+   compile (code) {
+-    // Local variable to provide some context to eval()
+-    const native = this.native // eslint-disable-line
+-    const { PartialReadError } = require('./utils') // eslint-disable-line
+-    return eval(code)() // eslint-disable-line
++    const native = this.native;
++    const { PartialReadError } = require('./utils');
++    const bodyMatch = code.match(/\(\)\s*=>\s*\{([\s\S]*)\}/);
++    if (!bodyMatch) {
++      // fallback if generated code doesn't match arrow function
++      return eval(code.replace(/\(\)\s*=>\s*\{/, '(native, PartialReadError) => {'))(native, PartialReadError);
++    }
++    const body = bodyMatch[1];
++    return new Function('native', 'PartialReadError', body)(native, PartialReadError);
+   }
+ }
+ 
 diff --git a/node_modules/protodef/src/serializer.js b/node_modules/protodef/src/serializer.js
 index 8b52e95..884426b 100644
 --- a/node_modules/protodef/src/serializer.js
