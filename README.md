@@ -1,4 +1,4 @@
-<h1 align="center">🧠 Mindcraft v0.1.4 ⛏️</h1>
+<h1 align="center">🧠 mindcraft v0.1.4 (reforged) ⛏️</h1>
 <h1 align="center">
   <a href="https://trendshift.io/repositories/9163" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9163" alt="kolbytn%2Fmindcraft | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </h1>
@@ -81,18 +81,16 @@ Designed for multi-agent setups where disk I/O becomes a bottleneck.
 
 ---
 
-### 5. 10+ New Bot Commands
+### 5. 8 New Bot Commands
 
 | Command | Description |
 |---------|-------------|
-| `!digDown` | Digs safely, stops at water/lava |
-| `!goToSurface` | Navigates to highest block |
-| `!useOn` | Right-click tool on entity/block/nothing |
 | `!exploreUntilFound` | Roam until target found — **threat-aware** (flees hostile mobs) |
 | `!forceWalkTowards` | Unstuck blindwalk helper |
 | `!mountEntity` / `!dismount` / `!saddleEntity` | Mount, ride, and saddle entities |
 | `!rightClickBlock` | Generic block interact |
 | `!unequip` | Remove armor from slot |
+| `!rollbackSkill` | Restore a skill to its previous version from backup history |
 
 Enhanced existing:
 - **`goToGoal`** — door-opening interval + stuck detection + jump recovery with 30s timeout via `Promise.race()`
@@ -116,13 +114,12 @@ Enhanced existing:
 ### 7. Architecture & Config
 
 - `constants.js` — all thresholds and timeouts centralized
-- LMStudio model support (`lmstudio` prefix)
 - Prompter: string cache (30s TTL) for `$STATS` etc.
 - Prompter: `relevant_skills` injected into `$COMMAND_DOCS`
 - `!help` command lists all available commands
 - `.env`-based secrets instead of `keys.json`
 - SES-safe `protodef` patch — protocol compilation under strict `lockdown({ taming: 'safe' })`
-- Clean, token-efficient codebase — fully self-documenting, English-only
+- Clean, token-efficient codebase — fully self-documenting
 
 ---
 
@@ -131,7 +128,7 @@ Enhanced existing:
 ### Requirements
 
 - [Minecraft Java Edition](https://www.minecraft.net/en-us/store/minecraft-java-bedrock-edition-pc) (up to v1.21.11)
-- [Node.js](https://nodejs.org/) (v18 or v20 LTS recommended)
+- [Node.js](https://nodejs.org/) (v22 LTS recommended)
 - At least one API key from a [supported provider](#supported-apis)
 
 > [!Important]
