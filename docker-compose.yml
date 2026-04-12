@@ -6,7 +6,6 @@ services:
         {"auto_open_ui": false}
     volumes:
       - ./settings.js:/app/settings.js
-      - ./keys.json:/app/keys.json
       - ./profiles:/app/profiles
       - ./bots:/app/bots
       - ./saved_skills:/app/saved_skills
